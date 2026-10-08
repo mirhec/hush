@@ -1,10 +1,21 @@
 # Releases und Installer
 
-`release.yml` reagiert auf veröffentlichte GitHub-Releases, einschließlich
-Prereleases. Es baut den jeweiligen Tag über den wiederverwendbaren
-`build.yml`-Workflow und lädt nach erfolgreichen Tests alle Installer und
-`SHA256SUMS.txt` an dieses Release hoch. Der Workflow erstellt keine zusätzlichen
-Releases und erhöht die Version nicht selbst.
+`release.yml` ist der einzige GitHub-Actions-Workflow. Er reagiert automatisch
+nur auf veröffentlichte GitHub-Releases, einschließlich Prereleases.
+Pushes auf `main`, Tag-Pushes und Pull Requests starten keine Actions.
+Der Workflow erstellt keine zusätzlichen Releases und erhöht die Version nicht selbst.
+
+Alle Schritte erscheinen in einem gemeinsamen Lauf „Release Hush“:
+
+1. Tag, Cargo-Version und Paketskripte prüfen; Existenz des veröffentlichten
+   Releases bestätigen; `cargo audit` ausführen.
+2. Nach erfolgreicher Prüfung Tests, Clippy, Builds und Installer für alle vier
+   Plattformen ausführen. Alle Builds verwenden dieselbe zuvor geprüfte Commit-ID.
+3. Nach Erfolg aller Plattformen das vollständige Installer-Set und
+   `SHA256SUMS.txt` an das Release hochladen.
+
+Schlägt eine Stufe fehl, laufen ihre nachfolgenden Stufen nicht. Ein falscher
+Versionstag stoppt bereits vor den aufwendigen Plattform-Builds.
 
 | Plattform | Release-Datei | Installation |
 |---|---|---|
@@ -21,11 +32,11 @@ diese bei Bedarf vorher.
 ## Ablauf
 
 1. `package.version` in `Cargo.toml` erhöhen und `Cargo.lock` aktualisieren.
-2. Änderungen einschließlich Lockfile und Workflows ins GitHub-Repository
-   übernehmen. Der lokale Quellordner ist bisher kein Git-Checkout.
-3. Ein Release mit passendem Tag veröffentlichen, beispielsweise `v0.1.0` für
-   Version `0.1.0`. Alternativ wird `0.1.0` ohne `v` akzeptiert.
-4. Unter GitHub Actions „Release installers“ kontrollieren. Die Installer
+2. Änderungen einschließlich Lockfile und Workflow ins GitHub-Repository
+   übernehmen. Der neue Tag muss auf diesen Commit zeigen.
+3. Ein Release mit passendem Tag veröffentlichen, beispielsweise `v1.0.0` für
+   Version `1.0.0`. Alternativ wird `1.0.0` ohne `v` akzeptiert.
+4. Unter GitHub Actions „Release Hush“ kontrollieren. Die Installer
    erscheinen erst nach Abschluss aller Builds am Release.
 
 Tag und Cargo-Version müssen übereinstimmen; Abweichungen brechen den Build ab.
@@ -38,12 +49,27 @@ Dateien; ein unveränderliches GitHub-Release erlaubt das nach Veröffentlichung
 nicht. Für aktivierte Release-Immutability müsste die Veröffentlichung erst nach
 dem Asset-Upload erfolgen; diese Pipeline verwendet ausdrücklich `published`.
 
-Pushes nach `main`, Pull Requests und manuelle Build-Läufe testen dieselben
-Paketskripte und stellen CI-Artefakte bereit. Sie veröffentlichen nichts und
-verwenden keine Signierzertifikate. Die Flatpak-Pipeline installiert das gebaute
+Die Flatpak-Pipeline installiert das gebaute
 Bundle im CI-Profil und prüft Programmversion sowie Dienststart und Status ohne
 GitHub-Zugangsdaten. Ein separater Test prüft Tray-Aktivierung, Menü und
 Host-Neustart in einer isolierten D-Bus-Sitzung.
+
+### Fehler beim ursprünglichen Release 1.0.0
+
+Der Tag `1.0.0` zeigte auf Commit `1bf25da`, dessen `Cargo.toml` und `Cargo.lock`
+noch `0.1.0` enthalten. Deshalb brachen alle vier Release-Jobs bei der Prüfung mit
+`Release tag '1.0.0' does not match Cargo version '0.1.0'` ab. Der gleichzeitig
+gestartete Main-Build hatte keinen Release-Tag zu prüfen und konnte weiterlaufen.
+Er war unabhängig vom Release-Lauf und stellte diesem keine Artefakte bereit.
+
+Die Cargo-Version im korrigierten Quellstand ist `1.0.0`. Das ändert den bereits
+veröffentlichten Tag nicht. Ein bloßes „Re-run jobs“ des ursprünglichen Laufs
+baut weiterhin den alten Stand. Für eine Wiederveröffentlichung als `1.0.0`
+müssten Release und Tag ausdrücklich auf den korrigierten Commit neu angelegt
+werden. Alternativ Version und Lockfile auf `1.0.1` erhöhen und dafür ein neues
+Release erstellen. Bestehende veröffentlichte Tags werden nicht automatisch
+verschoben. Ein manueller Lauf checkt ebenfalls den angegebenen Tag aus und
+umgeht die Versionsprüfung nicht.
 
 ## Signierung
 
@@ -99,7 +125,7 @@ Tray und Dienst bleiben nach Schließen des Fensters aktiv; der Desktop benötig
 einen StatusNotifier-Host und einen entsperrten Secret Service.
 
 ```sh
-flatpak install --user Hush-0.1.0-linux-x86_64.flatpak
+flatpak install --user Hush-1.0.0-linux-x86_64.flatpak
 flatpak run io.hush.github
 flatpak run io.hush.github --tray
 flatpak run io.hush.github --status
@@ -123,7 +149,7 @@ bash packaging/flatpak/package.sh
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_packaging.py'
-python3 packaging/version.py --tag v0.1.0
+python3 packaging/version.py --tag v1.0.0
 cargo test --locked --all-targets
 ```
 

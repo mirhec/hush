@@ -1,5 +1,35 @@
 # Validierungsstand — 8. Oktober 2026
 
+## Release-Pipeline: Diagnose und Zusammenfassung
+
+Der [Release-Lauf 1.0.0](https://github.com/mirhec/hush/actions/runs/37794586738)
+scheiterte auf allen vier Plattformen an der Versionsprüfung: Der Tag hieß
+`1.0.0`, Cargo enthielt noch `0.1.0`. Der Fehler wurde lokal mit
+`python3 packaging/version.py --tag 1.0.0` reproduziert.
+
+Beim [gleichzeitigen Main-Lauf](https://github.com/mirhec/hush/actions/runs/37794473971)
+waren Windows und macOS Apple Silicon einschließlich Paketierung erfolgreich.
+Linux und macOS Intel liefen beim letzten Abruf noch. Auch der isolierte
+Linux-D-Bus-Test war dort erfolgreich. Das bestätigt die jeweiligen CI-Schritte,
+keine manuelle Installation oder Interaktion auf einem Desktop.
+
+Lokal sind jetzt Cargo-Version und Lockfile auf `1.0.0` angeglichen. Es gibt nur
+noch `release.yml`, automatisch ausgelöst durch `release.published`, mit einer
+manuellen Wiederholung für bestehende Releases. Versionsprüfung und Audit gehen
+allen Plattform-Builds voraus; der Upload wartet auf deren gemeinsamen Erfolg.
+
+- Fünf Paketprüfungen und die Versionsprüfung für `1.0.0` erfolgreich.
+- Cargo-Metadaten akzeptieren das aktualisierte Lockfile mit `--locked --offline`.
+- Workflow-YAML und Shellsyntax sowie Trigger, Job-Abhängigkeiten, Plattformen,
+  Checkout des geprüften Commits und Token-Berechtigungen geprüft.
+- Upload-Prüfung mit temporären Testdateien ausgeführt: vollständige Installer-
+  Sätze akzeptiert, fehlende oder doppelte Plattform-Dateien abgewiesen.
+
+Der neue Workflow ist noch nicht auf GitHub ausgeführt. Der bestehende Tag und
+das veröffentlichte Release wurden nicht geändert; ein Neustart des alten Laufs
+würde weiter dessen alten Quellstand verwenden. Vorgehen für ein korrigiertes
+Release: [RELEASING.md](RELEASING.md#fehler-beim-ursprünglichen-release-100).
+
 ## Aktueller Stand: Oberfläche, Tray-Klick, Releases und Benachrichtigungen
 
 - **52 Rust-Tests erfolgreich** mit `cargo test --locked --offline --all-targets`.

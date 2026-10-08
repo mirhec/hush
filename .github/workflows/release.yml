@@ -1,11 +1,12 @@
-name: Release installers
+name: Release Hush
+run-name: Release ${{ github.event.release.tag_name || inputs.tag }}
 on:
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build again (for example v0.1.0)
+        description: Existing release tag to build again (for example 1.0.0)
         required: true
         type: string
 permissions:
@@ -13,12 +14,165 @@ permissions:
 concurrency:
   group: release-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
 jobs:
+  validate:
+    name: Version, packaging and dependency audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+      - name: Validate release version and packaging contracts
+        run: |
+          python3 packaging/version.py --tag "$RELEASE_TAG"
+          python3 -m unittest discover -s tests -p 'test_packaging.py'
+      - name: Check release exists and is published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$RELEASE_TAG" --json tagName,isDraft > "$RUNNER_TEMP/hush-release.json"
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          release = json.loads((Path(os.environ["RUNNER_TEMP"]) / "hush-release.json").read_text())
+          if release["isDraft"] or release["tagName"] != os.environ["RELEASE_TAG"]:
+              raise SystemExit("The selected tag must have a published GitHub release")
+          PYTHON
+      - name: Record validated source commit
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+      - name: Dependency audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
   build:
-    uses: ./.github/workflows/build.yml
-    with:
-      release_tag: ${{ github.event.release.tag_name || inputs.tag }}
-    secrets: inherit
+    needs: validate
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, name: linux-x86_64 }
+          - { os: windows-2022, name: windows-x86_64 }
+          - { os: macos-15, name: macos-arm64 }
+          - { os: macos-15-intel, name: macos-x86_64 }
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      MACOSX_DEPLOYMENT_TARGET: '13.0'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5, verified 2026-10-08
+        with:
+          persist-credentials: false
+          ref: ${{ needs.validate.outputs.commit }}
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libdbus-1-dev libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libglib2.0-dev flatpak flatpak-builder dbus-daemon
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - name: Validate release version and packaging contracts
+        shell: bash
+        run: |
+          rustc --version
+          python3 packaging/version.py --github-env "$GITHUB_ENV"
+          python3 -m unittest discover -s tests -p 'test_packaging.py'
+      - name: Core tests (no keyring or GitHub account)
+        run: cargo test --locked --no-default-features
+      - name: Desktop and regression tests
+        run: cargo test --locked --all-targets
+      - name: Linux tray activation and host restart over isolated D-Bus
+        if: runner.os == 'Linux'
+        env:
+          HUSH_ISOLATED_DBUS_TEST: '1'
+        run: dbus-run-session -- cargo test --locked --lib session_bus_activation_menu_and_host_restart -- --ignored
+      - name: Clippy
+        run: cargo clippy --locked --all-targets
+      - name: Release build
+        run: cargo build --locked --release
+      - name: Install Flatpak build runtime
+        if: runner.os == 'Linux'
+        run: |
+          flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install --noninteractive flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 org.freedesktop.Sdk.Extension.rust-stable//25.08
+      - name: Package Linux Flatpak
+        if: runner.os == 'Linux'
+        run: bash packaging/flatpak/package.sh
+      - name: Test installed Flatpak and background service
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- bash packaging/flatpak/smoke.sh
+      - name: Import macOS signing certificates
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_APP_IDENTITY: ${{ secrets.MACOS_APP_IDENTITY }}
+          MACOS_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+        run: bash packaging/macos/import-signing.sh
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_APP_IDENTITY: ${{ secrets.MACOS_APP_IDENTITY }}
+          MACOS_INSTALLER_IDENTITY: ${{ secrets.MACOS_INSTALLER_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash packaging/macos/package.sh
+      - name: Remove temporary macOS keychain
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [[ -f "$RUNNER_TEMP/hush-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/hush-signing.keychain-db"
+          fi
+          rm -f "$RUNNER_TEMP/hush-signing.p12"
+      - name: Sign Windows executable
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: ./packaging/windows/sign.ps1 -File target/release/hush.exe
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./packaging/windows/package.ps1
+      - name: Sign Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: ./packaging/windows/sign.ps1 -File "dist/Hush-${env:HUSH_VERSION}-windows-x86_64-setup.exe"
+      - name: Upload packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified 2026-10-08
+        with:
+          name: Hush-${{ matrix.name }}
+          path: |
+            dist/*.exe
+            dist/*.pkg
+            dist/*.flatpak
+          if-no-files-found: error
+          retention-days: 14
   publish:
     needs: build
     runs-on: ubuntu-24.04
@@ -28,7 +182,6 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
