@@ -1,0 +1,11 @@
+/target/
+/dist/
+*.db
+*.db-shm
+*.db-wal
+.env
+.DS_Store
+
+__pycache__/
+*.pyc
+.flatpak-builder/

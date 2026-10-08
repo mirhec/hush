@@ -1,0 +1,26 @@
+{
+  "checks_passed": 13,
+  "checks": [
+    "Cargo.toml parses as TOML",
+    "rust-toolchain.toml parses as TOML",
+    ".github/workflows/build.yml parses as YAML with jobs and triggers",
+    ".github/workflows/audit.yml parses as YAML with jobs and triggers",
+    "packaging/macos/bundle.sh passes bash -n (not executed)",
+    "packaging/macos/enable-autostart.sh passes bash -n (not executed)",
+    "packaging/linux/dms-status.sh passes bash -n (not executed)",
+    "packaging/linux/install.sh passes bash -n (not executed)",
+    "macOS Info.plist parses as a property list",
+    "SQLite schema extracted from Rust executes in Python SQLite (not a Rust test)",
+    "prototype JavaScript passes node --check",
+    "no todo! or unimplemented! macro in Rust application source",
+    "no standalone font files bundled"
+  ],
+  "rust_test_functions_supplied": 34,
+  "rust_test_functions_executed": 0,
+  "cargo_available": false,
+  "rustc_available": false,
+  "cargo_lock_present": false,
+  "live_github_tested": false,
+  "os_notification_tested": false,
+  "workflow_executed": false
+}

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.hush.github</id>
+  <name>Hush</name>
+  <summary>GitHub notifications for your desktop</summary>
+  <summary xml:lang="de">GitHub-Benachrichtigungen für den Desktop</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <launchable type="desktop-id">io.hush.github.desktop</launchable>
+  <description>
+    <p>Read review requests, reviews, new issues and mentions from GitHub.
+    Hush stores notification history locally and credentials in the system keyring.</p>
+  </description>
+  <provides><binary>hush</binary></provides>
+  <content_rating type="oars-1.1"/>
+  <releases/>
+</component>

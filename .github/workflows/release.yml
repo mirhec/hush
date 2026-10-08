@@ -1,0 +1,57 @@
+name: Release installers
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build again (for example v0.1.0)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      release_tag: ${{ github.event.release.tag_name || inputs.tag }}
+    secrets: inherit
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: Hush-*
+          path: dist
+          merge-multiple: true
+      - name: Verify complete installer set and generate checksums
+        working-directory: dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          windows=(Hush-*-windows-x86_64-setup.exe)
+          apple_silicon=(Hush-*-macos-arm64.pkg)
+          intel=(Hush-*-macos-x86_64.pkg)
+          linux=(Hush-*-linux-x86_64.flatpak)
+          [[ ${#windows[@]} == 1 && ${#apple_silicon[@]} == 1 && ${#intel[@]} == 1 && ${#linux[@]} == 1 ]]
+          sha256sum "${windows[@]}" "${apple_silicon[@]}" "${intel[@]}" "${linux[@]}" > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+      - name: Attach installers to the existing release
+        working-directory: dist
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --json tagName
+          gh release upload "$RELEASE_TAG" ./*.exe ./*.pkg ./*.flatpak ./SHA256SUMS.txt --clobber

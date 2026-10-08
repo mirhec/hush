@@ -1,0 +1,40 @@
+{
+  "scope": "HTML design prototype only; not native Rust/egui",
+  "passed": 25,
+  "checks": [
+    "8 clearly marked fictitious inbox events",
+    "prototype is visibly distinguished from a native screenshot",
+    "PR-request filter selects 2 events",
+    "mention filter selects 2 events",
+    "unread filter selects 4 events",
+    "empty search has a real empty state",
+    "repository search narrows the list",
+    "keyboard search shortcut focuses the input",
+    "opening a detail marks it read",
+    "Escape closes details",
+    "archive removes the selected event from inbox",
+    "archive contains the removed event",
+    "archive operation is reversible",
+    "read-all updates local counts",
+    "pause has an explicit visible state",
+    "theme switch enables the light palette",
+    "settings expose 4 event rules plus 2 notification switches",
+    "poll interval is selectable",
+    "invalid repository input is rejected",
+    "save remains explicitly demo-only",
+    "banner preview does not reveal private metadata by default",
+    "content preview requires the explicit switch",
+    "1000px viewport has no document-level horizontal overflow",
+    "no JavaScript runtime errors",
+    "no network requests from the prototype"
+  ],
+  "screenshots": [
+    "preview/screenshots/inbox-dark.png",
+    "preview/screenshots/detail-dark.png",
+    "preview/screenshots/inbox-light.png",
+    "preview/screenshots/settings-dark.png"
+  ],
+  "native_rust_compiled": false,
+  "native_os_notifications_tested": false,
+  "live_github_tested": false
+}

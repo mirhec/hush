@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Hush
+GenericName=GitHub Notifications
+GenericName[de]=GitHub-Benachrichtigungen
+Comment=GitHub reviews, issues and mentions
+Comment[de]=Reviews, Issues und Erwähnungen von GitHub
+Exec=hush
+Icon=io.hush.github
+Terminal=false
+Categories=Development;
+StartupNotify=true
+StartupWMClass=io.hush.github
+Actions=Tray;
+
+[Desktop Action Tray]
+Name=Start in tray
+Name[de]=Im Tray starten
+Exec=hush --tray
