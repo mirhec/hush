@@ -1,8 +1,12 @@
 """Portable release/version checks; native installers still run on their own OS."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import plistlib
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -48,6 +52,59 @@ class ReleaseVersionTests(unittest.TestCase):
         for release in ["01.2.3", "1.2", "1.2.3-01", "1.2.3/other", "65536.0.0"]:
             with self.subTest(release=release), self.assertRaises(ValueError):
                 version.versions(self.fixture(release))
+
+    def test_release_tags_replace_the_development_version_and_are_idempotent(self):
+        for tag, expected in [
+            ("1.0.1", ("1.0.1", "1.0.1")),
+            ("v1.0.2", ("1.0.2", "1.0.2")),
+            ("v2.0.0-rc.1+build.2", ("2.0.0-rc.1+build.2", "2.0.0")),
+        ]:
+            with self.subTest(tag=tag):
+                root = self.fixture("1.0.0")
+                self.assertEqual(version.stamp_release(tag, root), expected)
+                self.assertEqual(version.versions(root, tag), expected)
+                before = [(root / name).read_bytes() for name in ["Cargo.toml", "Cargo.lock"]]
+                version.stamp_release(tag, root)
+                self.assertEqual(before, [(root / name).read_bytes() for name in ["Cargo.toml", "Cargo.lock"]])
+
+    def test_stamping_preserves_dependencies_checksums_and_other_package_versions(self):
+        root = self.fixture("1.0.0")
+        manifest = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+        lock = (ROOT / "Cargo.lock").read_text(encoding="utf-8")
+        # Even a registry package with the same name must remain untouched.
+        lock += '\n[[package]]\nname = "hush"\nversion = "1.0.0"\nsource = "registry+https://example.com/index"\nchecksum = "unchanged"\n'
+        (root / "Cargo.toml").write_text(manifest, encoding="utf-8")
+        (root / "Cargo.lock").write_text(lock, encoding="utf-8")
+        previous = version.versions(root)[0]
+        version.stamp_release("v9.8.7", root)
+        self.assertEqual((root / "Cargo.toml").read_text(), manifest.replace(f'version = "{previous}"', 'version = "9.8.7"', 1))
+        self.assertEqual((root / "Cargo.lock").read_text(), lock.replace(f'name = "hush"\nversion = "{previous}"', 'name = "hush"\nversion = "9.8.7"', 1))
+
+    def test_bad_tags_or_inconsistent_lockfile_do_not_modify_sources(self):
+        for tag in ["", "latest", "../main", "v1.0", "v1.0.2\nHUSH_VERSION=other", "1.0.2;echo injected", "v01.0.2", "1.0.2-01", "65536.0.0"]:
+            with self.subTest(tag=tag):
+                root = self.fixture("1.0.0")
+                before = [(root / name).read_bytes() for name in ["Cargo.toml", "Cargo.lock"]]
+                with self.assertRaises(ValueError):
+                    version.stamp_release(tag, root)
+                self.assertEqual(before, [(root / name).read_bytes() for name in ["Cargo.toml", "Cargo.lock"]])
+        root = self.fixture("1.0.0", locked="0.1.0")
+        with self.assertRaisesRegex(ValueError, "same Hush version"):
+            version.stamp_release("1.0.2", root)
+        self.assertIn('version="1.0.0"', (root / "Cargo.toml").read_text())
+        self.assertIn('version="0.1.0"', (root / "Cargo.lock").read_text())
+
+    def test_cli_stamps_tag_from_environment_and_exports_installer_versions(self):
+        root = self.fixture("1.0.0")
+        (root / "packaging").mkdir()
+        script = root / "packaging/version.py"
+        shutil.copy2(ROOT / "packaging/version.py", script)
+        output = root / "github-env"
+        env = dict(os.environ, RELEASE_TAG="v1.0.2-rc.1")
+        result = subprocess.run([sys.executable, str(script), "--stamp", "--github-env", str(output)], env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "1.0.2-rc.1")
+        self.assertEqual(output.read_text(), "HUSH_VERSION=1.0.2-rc.1\nHUSH_NUMERIC_VERSION=1.0.2\n")
+        self.assertEqual(version.versions(root), ("1.0.2-rc.1", "1.0.2"))
 
     def test_flatpak_stages_only_build_inputs_and_uses_filtered_desktop_access(self):
         spec = importlib.util.spec_from_file_location("flatpak_prepare", ROOT / "packaging/flatpak/prepare.py")

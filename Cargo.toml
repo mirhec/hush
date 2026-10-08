@@ -1,5 +1,6 @@
 [package]
 name = "hush"
+# Local development version; release builds replace this from the Git tag.
 version = "1.0.0"
 edition = "2024"
 rust-version = "1.95"

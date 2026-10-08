@@ -3,7 +3,7 @@ GitHub-Benachrichtigungen für den Desktop.
 
 Eine eigenständige Desktop-Anwendung in **Rust + egui/eframe** für einen bewusst kleinen GitHub-Posteingang. Dunkles Salbeigrün, eine helle Alternative, vier Ereignisarten und keine eingebettete Browser-Engine in der nativen Anwendung.
 
-**Version 1.0.0 · Entwicklungsstand vom 8. Oktober 2026 · MIT**
+**Release-Version aus dem Git-Tag · MIT**
 
 Der lokale Linux-Build und die Rust-Tests sind geprüft. Auf GitHub Actions wurden außerdem Windows- und macOS-Apple-Silicon-Installer gebaut; Installation, Schlüsselbund, Tray und Desktop-Benachrichtigungen benötigen weiterhin Tests auf den Zielsystemen. Den aktuellen Prüfstand und offene Punkte dokumentiert [VALIDATION.md](docs/VALIDATION.md).
 
@@ -108,7 +108,7 @@ Autostart ist standardmäßig aus. Er wird nur mit dem ausdrücklichen Parameter
 
 ### Builds und Releases
 
-Der einzige Workflow `release.yml` startet automatisch nur beim Veröffentlichen eines GitHub-Releases. Er prüft zuerst Version, Paketskripte und Abhängigkeiten, testet und baut danach Linux x86-64, Windows x86-64, macOS Apple Silicon und Intel und lädt abschließend alle Installer und SHA-256-Prüfsummen hoch. Pushes auf `main`, Tag-Pushes und Pull Requests starten keine Actions. Ein vorhandenes Release kann manuell erneut gebaut werden. Die Version des Tags muss zur Version in `Cargo.toml` und `Cargo.lock` passen. Signierung und Apple-Notarisierung sind über GitHub-Secrets vorbereitet. Ohne Zertifikate bleiben die Installer unsigniert.
+Der einzige Workflow `release.yml` startet automatisch nur beim Veröffentlichen eines GitHub-Releases. Er übernimmt die Version aus dem Tag (z. B. `1.0.2` oder `v1.0.2`) für Anwendung und Installer. `Cargo.toml` und `Cargo.lock` werden dafür ausschließlich im Build-Verzeichnis angepasst; manuelle Versionsänderungen oder zusätzliche Versions-Commits sind nicht nötig. Danach prüft er Paketskripte und Abhängigkeiten, testet und baut Linux x86-64, Windows x86-64, macOS Apple Silicon und Intel und lädt alle Installer und SHA-256-Prüfsummen hoch. Pushes auf `main`, Tag-Pushes und Pull Requests starten keine Actions. Ein vorhandenes Release kann manuell erneut gebaut werden. Signierung und Apple-Notarisierung sind über GitHub-Secrets vorbereitet. Ohne Zertifikate bleiben die Installer unsigniert.
 
 Für Linux x86-64 erstellt derselbe Workflow ein Flatpak-Bundle. Installieren: `flatpak install --user Hush-1.0.0-linux-x86_64.flatpak`; starten: `flatpak run io.hush.github`. Die Freedesktop-Runtime wird bei Bedarf von Flathub geladen. Neue Versionen werden durch Installation des jeweiligen neuen Bundles aktualisiert.
 

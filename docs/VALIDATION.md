@@ -1,34 +1,40 @@
 # Validierungsstand — 8. Oktober 2026
 
-## Release-Pipeline: Diagnose und Zusammenfassung
+## Release-Version aus dem Git-Tag
+
+Der Release-Workflow übernimmt jetzt die Version aus dem Tag in die Cargo-Dateien
+jedes Build-Verzeichnisses. Der eingecheckte Entwicklungsstand muss dafür nicht
+mehr pro Release angepasst werden. Die Änderung wird nicht zurückcommittet.
+
+- **Neun Paketprüfungen erfolgreich**, einschließlich Übernahme von `1.0.1`,
+  `v1.0.2` und Prereleases, wiederholter Ausführung, unveränderter Abhängigkeiten
+  und Prüfsummen, Ablehnung ungültiger Tags vor Dateiänderungen und Export der
+  Installer-Versionen über `GITHUB_ENV`.
+- In einer separaten Quellkopie die Cargo-Version von `1.0.0` über den Tag
+  `v1.0.2` gesetzt. Dort alle neun Paketprüfungen erneut erfolgreich, einschließlich
+  Flatpak-Quellvorbereitung mit passender Cargo- und AppStream-Version.
+- `cargo metadata --locked --offline --no-deps` akzeptiert die vorbereiteten
+  Dateien. Das dort mit `cargo run --locked --offline --no-default-features`
+  gebaute Programm gibt mit `--version` tatsächlich **`Hush 1.0.2`** aus.
+- Workflow-YAML, Shellsyntax, ausschließliche Release-Auslöser, Job-Abhängigkeiten
+  und Übernahme der Tag-Version vor Cargo in beiden Build-Verzeichnissen geprüft.
+
+Die komplette neue Installer-Pipeline ist noch nicht auf GitHub ausgeführt.
+Für den ersten Lauf ein neues Release auf dem aktualisierten `main` erstellen;
+ältere Tags enthalten noch die frühere Versionsprüfung.
+
+### Vorherige Release-Fehler
 
 Der [Release-Lauf 1.0.0](https://github.com/mirhec/hush/actions/runs/37794586738)
-scheiterte auf allen vier Plattformen an der Versionsprüfung: Der Tag hieß
-`1.0.0`, Cargo enthielt noch `0.1.0`. Der Fehler wurde lokal mit
-`python3 packaging/version.py --tag 1.0.0` reproduziert.
+scheiterte am Unterschied zwischen Tag `1.0.0` und Cargo-Version `0.1.0`.
+Nach deren Angleichung trat mit Tag `1.0.1` gegenüber Cargo-Version `1.0.0`
+derselbe Fehler auf. Das automatische Übernehmen des Tags behebt diese Ursache.
 
-Beim [gleichzeitigen Main-Lauf](https://github.com/mirhec/hush/actions/runs/37794473971)
-waren Windows und macOS Apple Silicon einschließlich Paketierung erfolgreich.
-Linux und macOS Intel liefen beim letzten Abruf noch. Auch der isolierte
-Linux-D-Bus-Test war dort erfolgreich. Das bestätigt die jeweiligen CI-Schritte,
-keine manuelle Installation oder Interaktion auf einem Desktop.
-
-Lokal sind jetzt Cargo-Version und Lockfile auf `1.0.0` angeglichen. Es gibt nur
-noch `release.yml`, automatisch ausgelöst durch `release.published`, mit einer
-manuellen Wiederholung für bestehende Releases. Versionsprüfung und Audit gehen
-allen Plattform-Builds voraus; der Upload wartet auf deren gemeinsamen Erfolg.
-
-- Fünf Paketprüfungen und die Versionsprüfung für `1.0.0` erfolgreich.
-- Cargo-Metadaten akzeptieren das aktualisierte Lockfile mit `--locked --offline`.
-- Workflow-YAML und Shellsyntax sowie Trigger, Job-Abhängigkeiten, Plattformen,
-  Checkout des geprüften Commits und Token-Berechtigungen geprüft.
-- Upload-Prüfung mit temporären Testdateien ausgeführt: vollständige Installer-
-  Sätze akzeptiert, fehlende oder doppelte Plattform-Dateien abgewiesen.
-
-Der neue Workflow ist noch nicht auf GitHub ausgeführt. Der bestehende Tag und
-das veröffentlichte Release wurden nicht geändert; ein Neustart des alten Laufs
-würde weiter dessen alten Quellstand verwenden. Vorgehen für ein korrigiertes
-Release: [RELEASING.md](RELEASING.md#fehler-beim-ursprünglichen-release-100).
+Beim früheren [Main-Lauf](https://github.com/mirhec/hush/actions/runs/37794473971)
+waren beim damaligen Abruf Windows und macOS Apple Silicon einschließlich
+Paketierung erfolgreich, Linux und macOS Intel noch nicht abgeschlossen.
+Der isolierte Linux-D-Bus-Test war erfolgreich. Diese Ergebnisse belegen keine
+manuelle Installation oder Desktop-Interaktion auf den Zielsystemen.
 
 ## Aktueller Stand: Oberfläche, Tray-Klick, Releases und Benachrichtigungen
 

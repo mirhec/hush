@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build again (for example 1.0.0)
+        description: Existing release tag to build again (for example 1.0.2)
         required: true
         type: string
 permissions:
@@ -28,9 +28,9 @@ jobs:
         with:
           persist-credentials: false
           ref: refs/tags/${{ env.RELEASE_TAG }}
-      - name: Validate release version and packaging contracts
+      - name: Apply release tag and validate packaging contracts
         run: |
-          python3 packaging/version.py --tag "$RELEASE_TAG"
+          python3 packaging/version.py --stamp --tag "$RELEASE_TAG"
           python3 -m unittest discover -s tests -p 'test_packaging.py'
       - name: Check release exists and is published
         env:
@@ -85,11 +85,11 @@ jobs:
           sudo apt-get install -y build-essential pkg-config libdbus-1-dev libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libglib2.0-dev flatpak flatpak-builder dbus-daemon
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-      - name: Validate release version and packaging contracts
+      - name: Apply release tag and validate packaging contracts
         shell: bash
         run: |
           rustc --version
-          python3 packaging/version.py --github-env "$GITHUB_ENV"
+          python3 packaging/version.py --stamp --tag "$RELEASE_TAG" --github-env "$GITHUB_ENV"
           python3 -m unittest discover -s tests -p 'test_packaging.py'
       - name: Core tests (no keyring or GitHub account)
         run: cargo test --locked --no-default-features
