@@ -342,10 +342,11 @@ impl Store {
             ))
         })?;
         rows.map(|r| {
-            let (s, unread, archived) = r?;
+            let (s, unread, legacy_archived) = r?;
             let mut e: Event = serde_json::from_str(&s)?;
-            e.unread = unread;
-            e.archived = archived;
+            // Older versions offered a local archive. Keep those events in the
+            // shared history, preserving their read status without a migration.
+            e.unread = unread && !legacy_archived;
             Ok(e)
         })
         .collect()
@@ -369,16 +370,8 @@ impl Store {
             .execute("UPDATE events SET unread=0 WHERE id=?1", [id])?;
         Ok(())
     }
-    pub fn archive(&self, id: &str, value: bool) -> Result<()> {
-        self.conn.execute(
-            "UPDATE events SET archived=?2,unread=0,notified=1 WHERE id=?1",
-            params![id, value],
-        )?;
-        Ok(())
-    }
     pub fn read_all(&self) -> Result<()> {
-        self.conn
-            .execute("UPDATE events SET unread=0 WHERE archived=0", [])?;
+        self.conn.execute("UPDATE events SET unread=0", [])?;
         Ok(())
     }
     pub fn clear_history(&self) -> Result<()> {
@@ -420,7 +413,6 @@ mod tests {
             url: "https://github.com/a/b/pull/1".into(),
             occurred_at: Utc::now(),
             unread: true,
-            archived: false,
         }
     }
     #[test]

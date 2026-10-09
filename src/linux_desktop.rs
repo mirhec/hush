@@ -213,7 +213,7 @@ pub fn run(paths: Paths, start_in_tray: bool) -> Result<()> {
             unread: store
                 .events()?
                 .iter()
-                .filter(|e| e.unread && !e.archived)
+                .filter(|e| e.unread)
                 .count(),
             warning: runtime.notification_error.is_some()
                 || !runtime.warnings.is_empty()

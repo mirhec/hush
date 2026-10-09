@@ -116,49 +116,93 @@ fn click_text(ctx: &egui::Context, app: &mut HushApp, size: egui::Vec2, title: &
 }
 
 #[test]
-fn compact_inbox_fits_eight_events_and_long_rows_do_not_grow() {
+fn narrow_inbox_defaults_to_unread_and_keeps_rows_compact() {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx);
-    let size = vec2(1040., 720.);
-    draw(&ctx, &mut app, size, vec![]);
-    let labels = draw(&ctx, &mut app, size, vec![]);
-    for event in &app.events {
-        let rect = labels
-            .iter()
-            .find(|(text, _)| text == &event.title)
-            .expect("All eight event titles visible")
-            .1;
-        assert!(Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect));
+    assert!(app.unread_only);
+    assert_eq!(app.visible_events().len(), 4);
+    for width in [360., 440.] {
+        let size = vec2(width, 640.);
+        draw(&ctx, &mut app, size, vec![]);
+        let labels = draw(&ctx, &mut app, size, vec![]);
+        for event in app.events.iter().filter(|event| event.unread) {
+            let rect = labels
+                .iter()
+                .find(|(text, _)| text == &event.title)
+                .expect("Unread titles are present, even when elided")
+                .1;
+            assert!(Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect));
+        }
+        for title in ["Ungelesen", "Erledigt", "Erledigen", "Alle Typen"] {
+            assert!(
+                !labels.iter().any(|(text, _)| text == title),
+                "{title} must not be in the inbox"
+            );
+        }
     }
     let mut event = app.events[0].clone();
     event.title = "Ein sehr langer Issue-Titel ohne Platz für eine weitere Zeile. ".repeat(20);
     event.repository = "organisation/".to_owned() + &"repository".repeat(30);
-    for width in [280., 476., 800.] {
+    for width in [280., 336., 416.] {
         let mut rect = Rect::NOTHING;
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.set_width(width);
-            rect = event_card(ui, &event, false, Palette::dark()).rect;
+            rect = event_card(ui, &event, Palette::dark()).rect;
         });
         output.textures_delta.clear();
-        assert_eq!(rect.height(), 62.);
+        assert_eq!(rect.height(), 56.);
         assert!((rect.width() - width).abs() < 1.);
     }
 }
 
 #[test]
-fn small_window_keeps_settings_actions_visible_and_tabs_preserve_drafts() {
+fn filter_menu_combines_unread_type_and_search() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    let size = vec2(360., 480.);
+    draw(&ctx, &mut app, size, vec![]);
+    click_text(&ctx, &mut app, size, "Filter");
+    assert!(egui::Popup::is_id_open(&ctx, filter_popup_id()));
+    click_text(&ctx, &mut app, size, "Ungelesen");
+    assert!(!app.unread_only);
+    assert_eq!(app.visible_events().len(), 8);
+    click_text(&ctx, &mut app, size, "Neue Issues");
+    assert_eq!(app.kind, Some(Kind::Issue));
+    assert_eq!(app.visible_events().len(), 2);
+    app.search = "WAYLAND".into();
+    assert_eq!(app.visible_events().len(), 1);
+    click_text(&ctx, &mut app, size, "Ungelesen");
+    assert!(app.unread_only);
+    assert_eq!(app.visible_events().len(), 1);
+    draw(&ctx, &mut app, size, vec![escape()]);
+    assert!(!egui::Popup::is_id_open(&ctx, filter_popup_id()));
+    assert!(app.page == Page::Inbox);
+}
+
+fn escape() -> egui::Event {
+    egui::Event::Key {
+        key: egui::Key::Escape,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    }
+}
+
+#[test]
+fn narrow_settings_keep_footer_visible_and_preserve_drafts() {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx);
     app.page = Page::Settings;
-    let size = vec2(640., 480.);
+    let size = vec2(360., 480.);
     draw(&ctx, &mut app, size, vec![]);
     let labels = draw(&ctx, &mut app, size, vec![]);
     for title in [
         "Speichern",
         "Test-Benachrichtigung",
-        "Inhalte im Banner anzeigen",
         "Neue Issues",
-        "1 Min.",
+        "Konto",
+        "Diagnose",
     ] {
         let rect = labels
             .iter()
@@ -166,7 +210,7 @@ fn small_window_keeps_settings_actions_visible_and_tabs_preserve_drafts() {
             .unwrap_or_else(|| panic!("Missing {title}"))
             .1;
         assert!(
-            Rect::from_min_size(pos2(56., 0.), vec2(584., 480.)).contains_rect(rect),
+            Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect),
             "{title}: {rect:?}"
         );
     }
@@ -178,6 +222,28 @@ fn small_window_keeps_settings_actions_visible_and_tabs_preserve_drafts() {
     assert!(app.settings_tab == SettingsTab::Notifications);
     assert_eq!(app.repos_text, "example/changed");
     assert!(app.draft.show_preview);
+    draw(&ctx, &mut app, size, vec![escape()]);
+    assert!(app.page == Page::Inbox);
+    // The settings icon remains at the top right; drafts survive leaving the page.
+    for pressed in [true, false] {
+        let position = pos2(size.x - 26., 24.);
+        draw(
+            &ctx,
+            &mut app,
+            size,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    assert!(app.page == Page::Settings);
+    assert_eq!(app.repos_text, "example/changed");
     click_text(&ctx, &mut app, size, "Speichern");
     assert_eq!(app.config.repositories[0].to_string(), "example/changed");
     assert!(app.config.show_preview);
@@ -185,37 +251,66 @@ fn small_window_keeps_settings_actions_visible_and_tabs_preserve_drafts() {
 }
 
 #[test]
-fn compact_list_and_details_support_select_archive_and_escape() {
+fn clicking_an_event_opens_github_and_persists_read_state() {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx);
-    let size = vec2(640., 480.);
-    let first = app.events[0].clone();
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = Paths::at(temporary.path().join("data")).unwrap();
+    let mut store = Store::open(&paths).unwrap();
+    store.save_config(&app.config).unwrap();
+    let event = app.events[0].clone();
+    store
+        .ingest("alex", std::slice::from_ref(&event), false)
+        .unwrap();
+    app.store = Some(store);
+    // A browser substitute verifies the actual click path without launching external software.
+    app.open_url = |url| {
+        assert_eq!(url, "https://github.com/notifications");
+        Ok(())
+    };
+    let size = vec2(440., 640.);
     draw(&ctx, &mut app, size, vec![]);
-    click_text(&ctx, &mut app, size, &first.title);
-    assert_eq!(app.selected.as_deref(), Some(first.id.as_str()));
+    click_text(&ctx, &mut app, size, &event.title);
     assert!(!app.events[0].unread);
+    assert!(!Store::open(&paths).unwrap().events().unwrap()[0].unread);
+    assert!(app.page == Page::Inbox);
+    assert_eq!(app.visible_events().len(), 3);
     let labels = draw(&ctx, &mut app, size, vec![]);
-    for title in ["Auf GitHub ↗", "Erledigen"] {
-        let rect = labels.iter().find(|(text, _)| text == title).unwrap().1;
-        assert!(Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect));
-    }
-    click_text(&ctx, &mut app, size, "Erledigen");
-    assert!(app.events[0].archived);
-    assert!(app.selected.is_none());
-    app.selected = Some(app.events[1].id.clone());
-    draw(
-        &ctx,
-        &mut app,
-        size,
-        vec![egui::Event::Key {
-            key: egui::Key::Escape,
-            physical_key: None,
-            pressed: true,
-            repeat: false,
-            modifiers: egui::Modifiers::NONE,
-        }],
+    assert!(!labels.iter().any(|(text, _)| text == &event.title));
+}
+
+#[test]
+fn failed_or_unsafe_links_leave_events_unread() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    app.open_url = |_| Err(std::io::Error::other("Browser nicht verfügbar"));
+    let size = vec2(360., 480.);
+    let event = app.events[0].clone();
+    draw(&ctx, &mut app, size, vec![]);
+    click_text(&ctx, &mut app, size, &event.title);
+    assert!(app.events[0].unread);
+    assert!(app.message.is_some());
+    app.open_url = |_| panic!("Unsafe URLs must not reach the browser");
+    app.events[0].url = "https://example.com/unsafe".into();
+    app.open_event(&app.events[0].clone());
+    assert!(app.events[0].unread);
+}
+
+#[test]
+fn mark_all_read_is_available_in_filter_menu() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    let size = vec2(360., 480.);
+    draw(&ctx, &mut app, size, vec![]);
+    click_text(&ctx, &mut app, size, "Filter");
+    click_text(&ctx, &mut app, size, "Alle als gelesen markieren");
+    assert!(app.visible_events().is_empty());
+    assert!(!egui::Popup::is_id_open(&ctx, filter_popup_id()));
+    assert!(
+        draw(&ctx, &mut app, size, vec![])
+            .iter()
+            .any(|(text, _)| text == "Keine ungelesenen Benachrichtigungen")
     );
-    assert!(app.selected.is_none());
 }
 
 #[test]

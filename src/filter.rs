@@ -73,7 +73,7 @@ fn actor(v: &Value) -> String {
 fn event(kind: Kind, id: String, repo: &Repo, title: &str, actor: &str, detail: String, raw_url: &str, at: DateTime<Utc>) -> Option<Event> {
     let url = safe_web_url(raw_url).ok()?.to_string();
     Some(Event { id, kind, title: title.chars().take(300).collect(), repository: repo.to_string(),
-        actor: actor.to_owned(), detail, url, occurred_at: at, unread: true, archived: false })
+        actor: actor.to_owned(), detail, url, occurred_at: at, unread: true })
 }
 
 pub fn new_issue(v: &Value, repo: &Repo, since: DateTime<Utc>) -> Option<Event> {

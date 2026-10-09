@@ -3,7 +3,7 @@ use super::*;
 impl HushApp {
     pub(super) fn settings(&mut self, ui: &mut Ui) {
         let p = self.palette();
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             for (tab, title) in [
                 (SettingsTab::Notifications, "Benachrichtigungen"),
                 (SettingsTab::Account, "Konto"),
@@ -171,6 +171,22 @@ impl HushApp {
                     );
             }
         });
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .button(if self.config.paused() {
+                    "Fortsetzen"
+                } else {
+                    "30 Min. pausieren"
+                })
+                .on_hover_text("Desktop-Benachrichtigungen vorübergehend pausieren")
+                .clicked()
+            {
+                self.pause();
+            }
+            if self.config.paused() {
+                label(ui, "Pausiert", 11., p.amber);
+            }
+        });
     }
 
     fn account_settings(&mut self, ui: &mut Ui) {
@@ -244,7 +260,7 @@ impl HushApp {
             }
         });
         ui.add_space(4.);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui
                 .add_enabled(
                     self.job.is_none()
@@ -294,7 +310,7 @@ impl HushApp {
                     12.,
                     p.danger,
                 );
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui.button("Trennen und löschen").clicked() {
                         self.account_job(true);
                         self.confirm_disconnect = false;
@@ -364,6 +380,9 @@ impl HushApp {
             );
         } else {
             label(ui, "Demo · kein Hintergrunddienst", 12., p.muted);
+        }
+        if ui.button("Jetzt aktualisieren").clicked() {
+            self.refresh();
         }
         section(ui, "Lokale Daten", p);
         label(

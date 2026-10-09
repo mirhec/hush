@@ -128,7 +128,6 @@ pub struct Event {
     pub url: String,
     pub occurred_at: DateTime<Utc>,
     pub unread: bool,
-    pub archived: bool,
 }
 impl Event {
     pub fn excerpt(&self, max: usize) -> String { self.detail.chars().take(max).collect() }

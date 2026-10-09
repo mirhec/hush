@@ -8,17 +8,18 @@ use serde_json::json;
 fn export_native_ui_frames() {
     let directory = std::path::PathBuf::from(std::env::var("HUSH_UI_CAPTURE_DIR").unwrap());
     std::fs::create_dir_all(&directory).unwrap();
-    for (name, width, height, page, detail, light) in [
-        ("inbox", 1040., 720., Page::Inbox, false, false),
-        ("settings", 1040., 720., Page::Settings, false, false),
-        ("detail", 1040., 720., Page::Inbox, true, false),
-        ("inbox-small", 640., 480., Page::Inbox, false, false),
-        ("settings-small", 640., 480., Page::Settings, false, false),
-        ("detail-small", 640., 480., Page::Inbox, true, false),
-        ("inbox-light", 1040., 720., Page::Inbox, false, true),
-        ("account", 1040., 720., Page::Settings, false, false),
-        ("account-small", 640., 480., Page::Settings, false, false),
-        ("diagnostics", 640., 480., Page::Settings, false, false),
+    for (name, width, height, page, filters, light) in [
+        ("inbox", 440., 640., Page::Inbox, false, false),
+        ("inbox-all", 440., 640., Page::Inbox, false, false),
+        ("filters", 440., 640., Page::Inbox, true, false),
+        ("filters-small", 360., 480., Page::Inbox, true, false),
+        ("settings", 440., 640., Page::Settings, false, false),
+        ("inbox-small", 360., 480., Page::Inbox, false, false),
+        ("settings-small", 360., 480., Page::Settings, false, false),
+        ("inbox-light", 440., 640., Page::Inbox, false, true),
+        ("account", 440., 640., Page::Settings, false, false),
+        ("account-small", 360., 480., Page::Settings, false, false),
+        ("diagnostics", 360., 480., Page::Settings, false, false),
     ] {
         let ctx = egui::Context::default();
         let mut app = HushApp::new(
@@ -32,6 +33,8 @@ fn export_native_ui_frames() {
         app.page = page;
         app.light = light;
         theme::apply(&ctx, light);
+        // Capture settled popup opacity, independent of rendering speed.
+        ctx.global_style_mut(|style| style.animation_time = 0.);
         if name.starts_with("account") {
             app.settings_tab = SettingsTab::Account;
             app.demo = false;
@@ -44,8 +47,11 @@ fn export_native_ui_frames() {
         if name == "diagnostics" {
             app.settings_tab = SettingsTab::Diagnostics;
         }
-        if detail {
-            app.selected = Some(app.events[0].id.clone());
+        if name == "inbox-all" {
+            app.unread_only = false;
+        }
+        if filters {
+            egui::Popup::open_id(&ctx, filter_popup_id());
         }
         let mut textures = Vec::new();
         let mut meshes = Vec::new();

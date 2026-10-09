@@ -1,17 +1,17 @@
 # Hush
 GitHub-Benachrichtigungen für den Desktop.
 
-Eine eigenständige Desktop-Anwendung in **Rust + egui/eframe** für einen bewusst kleinen GitHub-Posteingang. Dunkles Salbeigrün, eine helle Alternative, vier Ereignisarten und keine eingebettete Browser-Engine in der nativen Anwendung.
+Eine Desktop-Anwendung in **Rust + egui/eframe** mit einem schmalen GitHub-Posteingang, vier Ereignisarten und hellem oder dunklem Farbschema.
 
 **Release-Version aus dem Git-Tag · MIT**
 
 Der lokale Linux-Build und die Rust-Tests sind geprüft. Auf GitHub Actions wurden außerdem Windows- und macOS-Apple-Silicon-Installer gebaut; Installation, Schlüsselbund, Tray und Desktop-Benachrichtigungen benötigen weiterhin Tests auf den Zielsystemen. Den aktuellen Prüfstand und offene Punkte dokumentiert [VALIDATION.md](docs/VALIDATION.md).
 
-## Zwei unterschiedliche Dinge im Paket
+## Anwendung und Vorschau
 
-**Die Anwendung:** `src/` enthält die tatsächliche Rust-Implementierung: Oberfläche, GitHub-Client, Ereignisfilter, Hintergrundprozess, SQLite-Speicher und Schlüsselbund-/Benachrichtigungsanbindung. Es handelt sich nicht nur um ein HTML-Mockup.
+**Die Anwendung:** `src/` enthält die Rust-Implementierung: Oberfläche, GitHub-Client, Ereignisfilter, Hintergrundprozess, SQLite-Speicher und Schlüsselbund-/Benachrichtigungsanbindung. Aktuelle Abbildungen der nativen egui-Oberfläche liegen in `docs/screenshots/`; der Export und dessen Darstellung sind in [DESIGN.md](docs/DESIGN.md) beschrieben.
 
-**Die Designvorschau:** `preview/hush-preview.html` ist eine separat implementierte, interaktive Offline-Vorschau mit erfundenen Daten. Sie zeigt Posteingang, Details, Filter, Suche, Archiv und Einstellungen, verbindet sich aber niemals mit GitHub. Die Bilder in `preview/screenshots/` stammen aus dieser Vorschau, **nicht aus einer ausgeführten egui-Anwendung**. Browser- und egui-Typografie/Abstände können abweichen. Es werden keine externen Fonts oder Bilder nachgeladen.
+**Der historische Prototyp:** `preview/hush-preview.html` und die Bilder in `preview/screenshots/` zeigen einen früheren Entwurf mit erfundenen Daten. Seine Detailansicht, Seitenleiste und Archivfunktion gehören nicht mehr zur Anwendung. Der Prototyp verbindet sich nicht mit GitHub und lädt keine externen Fonts oder Bilder.
 
 ## Die vier Regeln
 
@@ -26,13 +26,17 @@ GitHubs Benachrichtigungsgrund `mention` ist ausdrücklich **kein** Beweis für 
 
 ## Bedienung
 
-Kompakter Posteingang mit zweizeiligen Einträgen, Suche, Ereignisfiltern, Ungelesen-Ansicht, Detailbereich und lokalem Archiv. Das Fenster startet mit 1040 × 720 Pixeln und lässt sich bis 640 × 480 verkleinern; dabei wird die Navigation zur Icon-Leiste. Einstellungen sind in Benachrichtigungen, Konto und Diagnose aufgeteilt. `Strg+K` / `Cmd+K` fokussiert die Suche; `Esc` schließt Details. Links werden erst auf Knopfdruck im Systembrowser geöffnet und müssen zu `https://github.com` gehören.
+Das Fenster startet mit **440 × 640 Pixeln** und lässt sich bis **360 × 480** verkleinern. Der Posteingang zeigt standardmäßig nur ungelesene Benachrichtigungen. Neben der Suche öffnet **Filter** das Menü für „Ungelesen“, alle oder einzelne Ereignisarten sowie „Alle als gelesen markieren“. Ohne den Ungelesen-Filter erscheint auch der gelesene Verlauf.
+
+Ein Klick auf einen Eintrag öffnet ihn direkt auf GitHub im Systembrowser. Erst wenn der Browser-Aufruf erfolgreich war, markiert Hush ihn lokal als gelesen. Schlägt das Öffnen fehl, bleibt er ungelesen und ein Hinweis erscheint. Zulässig sind ausschließlich Links zu `https://github.com`.
+
+Das Zahnrad oben rechts öffnet die Einstellungen mit den Tabs Benachrichtigungen, Konto und Diagnose. `Strg+K` / `Cmd+K` wechselt zur Suche; `Esc` schließt das Filtermenü oder führt aus den Einstellungen zum Posteingang zurück.
 
 Die normalen Einstellungen beschränken sich auf die vier Regeln, Issue-Repositories, Systembenachrichtigungen, vertrauliche Inhaltsvorschau und ein Abfrageintervall von 1/2/5 Minuten. Eine Pause hält Desktop-Benachrichtigungen für 30 Minuten zurück; die Ereignisse erscheinen weiter im Posteingang. Es gibt nach Ende der Pause keine nachträgliche Bannerflut. Die Hell-/Dunkel-Auswahl gilt in 0.1 für die laufende Fenstersitzung.
 
 Beim ersten Synchronisieren werden maximal die letzten 24 Stunden importiert, **ohne Banner**. Der sichtbare Verlauf ist auf 500 Einträge bzw. 30 Tage begrenzt. Ältere Dubletten-IDs werden noch bis zu 90 Tage aufbewahrt.
 
-**Gelesen und erledigt sind lokal:** Hush verändert keine Issues, PRs oder GitHub-Lesestände. Auf mehreren Rechnern entstehen unabhängige Posteingänge und gegebenenfalls mehrere Banner für dasselbe Ereignis.
+**Der Lesestatus ist lokal:** Hush verändert keine Issues, PRs oder GitHub-Lesestände. Auf mehreren Rechnern entstehen unabhängige Posteingänge und gegebenenfalls mehrere Banner für dasselbe Ereignis. In früheren Versionen archivierte Einträge bleiben als gelesen im Verlauf erhalten.
 
 ## Starten / bauen
 
@@ -168,9 +172,10 @@ src/engine.rs    Hintergrundprozess, Scheduling, Wiederholungen, Zustellung
 src/storage.rs   Private SQLite-Datenbank, IDs, Cursor, Aufgaben, Outbox
 src/secrets.rs   Betriebssystem-Schlüsselbund; kein Klartext-Fallback
 src/notify.rs    Native Banner, private Voreinstellung
-preview/         Separate interaktive HTML-Designvorschau
+preview/         Historischer HTML-Prototyp
+scripts/         Darstellung exportierter nativer egui-Oberflächen
 packaging/       Benutzerinstallation und optionale Autostarts
-.github/         Noch auszuführende Build-/Audit-Workflows
+.github/         Release-Workflow mit Prüfung, Builds und Installern
 ```
 
 ## Primärquellen zur Implementierung

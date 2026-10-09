@@ -1,27 +1,30 @@
 # Validierungsstand — 9. Oktober 2026
 
-## Kompakte native Oberfläche
+## Schmaler Posteingang
 
-- **56 Rust-Tests erfolgreich**, einschließlich Klick-/Tastaturbedienung der
-  Schalter, acht sichtbarer Listeneinträge bei 1040 × 720, fester Zeilenhöhe bei
-  langen Titeln, sichtbarer Einstellungsaktionen bei 640 × 480, Tabwechsel ohne
-  Entwurfsverlust, Auswahl/Erledigen/Escape und Zugriffshinweis zur Konto-Seite.
-- Clippy und der Linux-Release-Build erfolgreich; bestehende Hinweise bleiben.
-- Zehn Ansichten aus den tatsächlichen egui-Zeichendaten exportiert. Posteingang,
-  Detailansicht, Einstellungen und Konto bei 1040 × 720 sowie 640 × 480 und die
-  helle Variante visuell geprüft. Der neue Export-Test ist im regulären Testlauf
-  übersprungen und wurde für diese Prüfung separat ausgeführt. Der D-Bus-Test
-  bleibt lokal wegen der Sandbox ebenfalls übersprungen.
-- Die Vergleichsansicht bei 1040 × 720 zeigt acht vollständig sichtbare
-  Demo-Einträge statt zuvor zwei. Listeneinträge sind jetzt 62 Pixel hoch;
-  Schalterzeilen höchstens 40 Pixel. Das Startfenster ist 1040 × 720 statt
-  1240 × 860 groß, die Mindestgröße 640 × 480 statt 900 × 700.
+- **59 Rust-Tests erfolgreich** mit `cargo test --locked --offline --all-targets`.
+  Geprüft sind unter anderem der Ungelesen-Standard, das Zusammenspiel von
+  Filtermenü und Suche, Klick → GitHub → dauerhaft gespeicherter Lesestatus,
+  ungelesene Einträge bei Browser-/Linkfehlern, das Markieren aller Einträge als
+  gelesen und die Kompatibilität mit ehemals archivierten Daten.
+- Layout- und Interaktionstests prüfen 360 und 440 Pixel Fensterbreite,
+  56 Pixel hohe Einträge bei langen Titeln, sichtbare Einstellungsaktionen bei
+  360 × 480 und den Erhalt von Entwürfen bei Tab- und Seitenwechseln.
+- Clippy erfolgreich mit fünf bereits bestehenden Hinweisen; Linux-Release-Build
+  erfolgreich. Der ausführbare Build liegt unter `target/release/hush`.
+- Elf Ansichten aus den tatsächlichen egui-Zeichendaten exportiert. Schmaler
+  Posteingang in Hell/Dunkel, Filtermenü, Einstellungen bei 440 × 640 und
+  360 × 480, Konto und Diagnose bei 360 × 480 visuell geprüft.
+  Der Export-Test wurde separat ausgeführt; der isolierte D-Bus-Test bleibt
+  wegen der lokalen Sandbox übersprungen.
 
 [Abbildungen und Wiederholung der Layoutprüfung](DESIGN.md#darstellung-prüfen).
-Die Bilder verwenden echte egui-Geometrie und Font-Texturen mit Demoinhalten,
-keine nachgebaute HTML-Oberfläche. Eine native Desktop-Sitzung und verschiedene
-Betriebssystem-Skalierungen wurden damit nicht geprüft. Die laufende Installation
-und persönliche Kontodaten wurden für diese Überarbeitung nicht verändert.
+Die Bilder verwenden echte egui-Geometrie und Font-Texturen mit Demoinhalten.
+Browser-Übergabe und lokale Lesestatus-Speicherung wurden mit einem ersetzten
+Browser-Aufruf und temporärer Datenbank getestet. Eine native Desktop-Sitzung,
+reales Browserstartverhalten und verschiedene Betriebssystem-Skalierungen wurden
+hier nicht geprüft. Die laufende Installation und persönliche Kontodaten wurden
+für diese Überarbeitung nicht verändert.
 
 ## Release-Version aus dem Git-Tag
 

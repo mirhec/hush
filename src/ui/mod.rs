@@ -32,7 +32,6 @@ use zeroize::{Zeroize, Zeroizing};
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Inbox,
-    Archive,
     Settings,
 }
 
@@ -56,7 +55,7 @@ pub struct HushApp {
     kind: Option<Kind>,
     unread_only: bool,
     search: String,
-    selected: Option<String>,
+    open_url: fn(&str) -> std::io::Result<()>,
     repos_text: String,
     teams_text: String,
     token: String,
@@ -117,9 +116,9 @@ impl HushApp {
                 SettingsTab::Notifications
             },
             kind: None,
-            unread_only: false,
+            unread_only: true,
             search: String::new(),
-            selected: None,
+            open_url: webbrowser::open,
             repos_text: repo_text(&cfg.repositories),
             teams_text: repo_text(&cfg.manual_teams),
             token: String::new(),
@@ -293,7 +292,6 @@ impl HushApp {
                     match store.take_flag("show_settings") {
                         Ok(true) => {
                             self.page = Page::Settings;
-                            self.selected = None;
                             tray::show_window(ctx);
                         }
                         Ok(false) => {}
@@ -323,36 +321,35 @@ impl HushApp {
             }
         }
     }
-    fn select(&mut self, id: String) {
-        if let Some(e) = self.events.iter_mut().find(|e| e.id == id) {
-            e.unread = false;
+    fn open_event(&mut self, event: &Event) {
+        // Keep the item unread if the browser could not be opened.
+        if !self.open(&event.url) {
+            return;
         }
-        if let Some(store) = &self.store {
-            if let Err(e) = store.read(&id) {
-                self.message = Some(Toast::new(e.to_string(), true));
+        let result = self
+            .store
+            .as_ref()
+            .map_or(Ok(()), |store| store.read(&event.id));
+        match result {
+            Ok(()) => {
+                if let Some(item) = self.events.iter_mut().find(|item| item.id == event.id) {
+                    item.unread = false;
+                }
             }
+            Err(error) => self.message = Some(Toast::new(error.to_string(), true)),
         }
-        self.selected = Some(id);
     }
-    fn archive(&mut self, id: &str, value: bool) {
-        let result = if let Some(s) = &self.store {
-            s.archive(id, value)
-        } else {
-            Ok(())
-        };
-        if result.is_ok() {
-            if let Some(e) = self.events.iter_mut().find(|e| e.id == id) {
-                e.archived = value;
-                e.unread = false;
-            }
-            self.selected = None;
-        }
+    fn refresh(&mut self) {
+        let result = self
+            .store
+            .as_ref()
+            .map_or(Ok(()), |store| store.request_refresh());
         self.report(
             result,
-            if value {
-                "Als erledigt markiert."
+            if self.demo {
+                "Demodaten sind bereits aktuell."
             } else {
-                "Zurück im Posteingang."
+                "Aktualisierung angefragt."
             },
         );
     }
@@ -436,159 +433,42 @@ impl HushApp {
             Err(e) => self.message = Some(Toast::new(e.to_string(), true)),
         }
     }
-    fn open(&mut self, url: &str) {
-        let r = (|| -> anyhow::Result<()> {
-            let u = safe_web_url(url)?;
-            webbrowser::open(u.as_str())?;
+    fn open(&mut self, url: &str) -> bool {
+        let result = (|| -> anyhow::Result<()> {
+            let url = safe_web_url(url)?;
+            (self.open_url)(url.as_str())?;
             Ok(())
         })();
-        if let Err(e) = r {
-            self.message = Some(Toast::new(e.to_string(), true));
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                self.message = Some(Toast::new(error.to_string(), true));
+                false
+            }
         }
     }
-    fn sidebar(&mut self, ui: &mut Ui) {
-        let p = self.palette();
-        let compact = ui.available_width() < 100.;
-        let (brand, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.), Sense::hover());
-        let mark = Rect::from_min_size(brand.min + vec2(4., 4.), vec2(28., 28.));
-        ui.painter().rect_filled(mark, 7, p.accent);
-        icons::mark(ui.painter(), mark.center(), 18., p.on_accent);
-        if !compact {
-            ui.painter().text(
-                brand.min + vec2(42., 17.),
-                Align2::LEFT_CENTER,
-                "hush",
-                FontId::proportional(22.),
-                p.text,
-            );
-        }
-        ui.add_space(8.);
-        let unread = self
-            .events
-            .iter()
-            .filter(|e| e.unread && !e.archived)
-            .count();
-        if nav(
-            ui,
-            Icon::Inbox,
-            "Posteingang",
-            Some(unread),
-            self.page == Page::Inbox && self.kind.is_none(),
-            p,
-        ) {
-            self.page = Page::Inbox;
-            self.kind = None;
-            self.selected = None;
-        }
-        if nav(
-            ui,
-            Icon::Archive,
-            "Erledigt",
-            None,
-            self.page == Page::Archive,
-            p,
-        ) {
-            self.page = Page::Archive;
-            self.kind = None;
-            self.selected = None;
-        }
-        ui.add_space(8.);
-        ui.separator();
-        if !compact {
-            label(ui, "Filter", 11., p.faint);
-        }
-        for kind in Kind::ALL {
-            let n = self
-                .events
-                .iter()
-                .filter(|e| e.kind == kind && e.unread && !e.archived)
-                .count();
-            if nav(
-                ui,
-                kind.into(),
-                kind.label(),
-                Some(n),
-                self.page == Page::Inbox && self.kind == Some(kind),
-                p,
-            ) {
-                self.page = Page::Inbox;
-                self.kind = Some(kind);
-                self.selected = None;
-            }
-        }
-        ui.add_space((ui.available_height() - 82.).max(8.));
-        if nav(
-            ui,
-            Icon::Settings,
-            "Einstellungen",
-            None,
-            self.page == Page::Settings,
-            p,
-        ) {
-            if self.page != Page::Settings {
-                self.reset_draft();
-            }
-            self.page = Page::Settings;
-            self.selected = None;
-        }
-        ui.separator();
-        let account = if self.config.login.is_empty() {
-            "Nicht verbunden".into()
-        } else {
-            format!("@{}", self.config.login)
-        };
-        let (r, response) = ui.allocate_exact_size(vec2(ui.available_width(), 26.), Sense::click());
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "GitHub-Konto verwalten")
-        });
-        let avatar = Rect::from_min_size(r.min + vec2(6., 2.), vec2(22., 22.));
-        ui.painter().rect_filled(avatar, 6, p.hover);
-        let initial = self
-            .config
-            .login
-            .chars()
-            .next()
-            .unwrap_or('H')
-            .to_uppercase()
-            .to_string();
-        ui.painter().text(
-            avatar.center(),
-            Align2::CENTER_CENTER,
-            initial,
-            FontId::proportional(11.),
-            p.accent,
-        );
-        if !compact {
-            paint_elided(
-                ui,
-                pos2(r.left() + 36., r.top() + 5.),
-                &account,
-                12.,
-                p.muted,
-                r.width() - 40.,
-            );
-        }
-        if response.on_hover_text("GitHub-Konto verwalten").clicked() {
-            if self.page != Page::Settings {
-                self.reset_draft();
-            }
-            self.page = Page::Settings;
-            self.settings_tab = SettingsTab::Account;
-            self.selected = None;
-        }
-    }
-
     fn header(&mut self, ui: &mut Ui) {
         let p = self.palette();
         ui.horizontal(|ui| {
-            let title = match self.page {
-                Page::Settings => "Einstellungen",
-                Page::Archive => "Erledigt",
-                Page::Inbox => self.kind.map_or("Posteingang", Kind::label),
-            };
-            label(ui, title, 20., p.text);
+            if self.page == Page::Settings {
+                if icons::button(ui, Icon::Back, "Zurück zum Posteingang", p).clicked() {
+                    self.page = Page::Inbox;
+                }
+                label(ui, "Einstellungen", 18., p.text);
+            } else {
+                label(ui, "Posteingang", 18., p.text);
+                let unread = self.events.iter().filter(|event| event.unread).count();
+                if unread > 0 {
+                    ui.label(RichText::new(unread.to_string()).size(12.).color(p.accent))
+                        .on_hover_text(format!("{unread} ungelesen"));
+                }
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if icons::button(
+                if self.page == Page::Inbox {
+                    if icons::button(ui, Icon::Settings, "Einstellungen", p).clicked() {
+                        self.page = Page::Settings;
+                    }
+                } else if icons::button(
                     ui,
                     if self.light { Icon::Moon } else { Icon::Sun },
                     "Helles / dunkles Erscheinungsbild (dieses Fenster)",
@@ -599,78 +479,9 @@ impl HushApp {
                     self.light = !self.light;
                     theme::apply(ui.ctx(), self.light);
                 }
-                if icons::button(
-                    ui,
-                    if self.config.paused() {
-                        Icon::Play
-                    } else {
-                        Icon::Pause
-                    },
-                    if self.config.paused() {
-                        "Benachrichtigungen fortsetzen"
-                    } else {
-                        "Benachrichtigungen 30 Minuten pausieren"
-                    },
-                    p,
-                )
-                .clicked()
-                {
-                    self.pause();
-                }
-                if icons::button(ui, Icon::Refresh, "Jetzt aktualisieren", p).clicked() {
-                    let r = if let Some(s) = &self.store {
-                        s.request_refresh()
-                    } else {
-                        Ok(())
-                    };
-                    self.report(
-                        r,
-                        if self.demo {
-                            "Demodaten sind bereits aktuell."
-                        } else {
-                            "Aktualisierung angefragt."
-                        },
-                    );
-                }
-                let status = if self.demo {
-                    "Demo"
-                } else if self.service_job.is_some() {
-                    "Startet"
-                } else if !self.running || !self.status.alive() {
-                    "Inaktiv"
-                } else if self.status.notification_error.is_some() {
-                    "Zustellfehler"
-                } else if self.config.paused() {
-                    "Pausiert"
-                } else if self.config.login.is_empty() {
-                    "Offline"
-                } else if self.status.warnings.is_empty() && self.status.last_sync.is_some() {
-                    "Verbunden"
-                } else {
-                    "Prüfen"
-                };
-                let color = if self.status.notification_error.is_some() {
-                    p.danger
-                } else if self.demo
-                    || self.config.paused()
-                    || !self.status.warnings.is_empty()
-                    || !self.running
-                    || !self.status.alive()
-                    || self.config.login.is_empty()
-                {
-                    p.amber
-                } else {
-                    p.accent
-                };
-                let (dot, response) = ui.allocate_exact_size(vec2(10., 16.), Sense::hover());
-                ui.painter().circle_filled(dot.center(), 3., color);
-                response.on_hover_text(status);
-                if ui.available_width() > 90. {
-                    label(ui, status, 11., color);
-                }
             });
         });
-        ui.add_space(4.);
+        ui.add_space(2.);
         ui.separator();
         ui.add_space(2.);
     }
@@ -738,16 +549,27 @@ impl HushApp {
             ui.add_space(8.);
         }
     }
+    fn visible_events(&self) -> Vec<Event> {
+        let needle = self.search.to_lowercase();
+        self.events
+            .iter()
+            .filter(|event| {
+                self.kind.is_none_or(|kind| event.kind == kind)
+                    && (!self.unread_only || event.unread)
+                    && format!(
+                        "{} {} {} {}",
+                        event.title, event.repository, event.actor, event.detail
+                    )
+                    .to_lowercase()
+                    .contains(&needle)
+            })
+            .cloned()
+            .collect()
+    }
     fn inbox(&mut self, ui: &mut Ui) {
         let p = self.palette();
-        let archived = self.page == Page::Archive;
-        let narrow = ui.available_width() < 470.;
         ui.horizontal(|ui| {
-            let search_width = if narrow {
-                ui.available_width()
-            } else {
-                (ui.available_width() - 210.).max(100.)
-            };
+            let search_width = (ui.available_width() - 72. - ui.spacing().item_spacing.x).max(80.);
             let response = ui.add_sized(
                 [search_width, 28.],
                 egui::TextEdit::singleline(&mut self.search)
@@ -758,52 +580,48 @@ impl HushApp {
                 response.request_focus();
                 self.focus_search = false;
             }
-            if !narrow {
-                self.inbox_actions(ui);
-            }
+            let filter = ui.add_sized(
+                [72., 28.],
+                egui::Button::new("Filter").selected(self.unread_only || self.kind.is_some()),
+            );
+            egui::Popup::menu(&filter)
+                .id(filter_popup_id())
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .width(230.)
+                .show(|ui| {
+                    ui.checkbox(&mut self.unread_only, "Ungelesen");
+                    ui.separator();
+                    ui.selectable_value(&mut self.kind, None, "Alle Typen");
+                    for kind in [Kind::Request, Kind::Issue, Kind::Review, Kind::Mention] {
+                        ui.selectable_value(&mut self.kind, Some(kind), kind.label());
+                    }
+                    ui.separator();
+                    if ui
+                        .add_enabled(
+                            self.events.iter().any(|event| event.unread),
+                            egui::Button::new("Alle als gelesen markieren"),
+                        )
+                        .on_hover_text("Markiert den gesamten lokalen Verlauf als gelesen.")
+                        .clicked()
+                    {
+                        self.read_all();
+                        ui.close();
+                    }
+                });
         });
-        if narrow {
-            ui.horizontal(|ui| self.inbox_actions(ui));
-        }
-        ui.add_space(4.);
-        let needle = self.search.to_lowercase();
-        let visible: Vec<Event> = self
-            .events
-            .iter()
-            .filter(|e| {
-                e.archived == archived
-                    && self.kind.is_none_or(|k| e.kind == k)
-                    && (!self.unread_only || e.unread)
-                    && format!("{} {} {} {}", e.title, e.repository, e.actor, e.detail)
-                        .to_lowercase()
-                        .contains(&needle)
-            })
-            .cloned()
-            .collect();
+        ui.add_space(2.);
+        let visible = self.visible_events();
         if visible.is_empty() {
-            ui.add_space(36.);
+            ui.add_space(32.);
             ui.vertical_centered(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(40., 40.), Sense::hover());
-                ui.painter()
-                    .circle_stroke(r.center(), 19., Stroke::new(1., p.border));
-                icons::mark(ui.painter(), r.center(), 22., p.accent);
-                ui.add_space(10.);
                 label(
                     ui,
-                    if self.search.is_empty() {
-                        "Keine Benachrichtigungen"
-                    } else {
+                    if !self.search.is_empty() || self.kind.is_some() {
                         "Keine Treffer"
-                    },
-                    18.,
-                    p.text,
-                );
-                label(
-                    ui,
-                    if self.search.is_empty() {
-                        "Neue Benachrichtigungen erscheinen hier."
+                    } else if self.unread_only {
+                        "Keine ungelesenen Benachrichtigungen"
                     } else {
-                        "Versuche einen anderen Namen oder ein Repository."
+                        "Keine Benachrichtigungen"
                     },
                     13.,
                     p.muted,
@@ -811,125 +629,27 @@ impl HushApp {
             });
             return;
         }
-        let list_height = ui.available_height();
         egui::ScrollArea::vertical()
-            .id_salt("inbox-scroll")
-            .max_height(list_height.max(40.))
+            .id_salt(("inbox-scroll", self.kind, self.unread_only, &self.search))
+            .max_height(ui.available_height().max(40.))
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.;
-                let mut last_date = String::new();
-                for e in visible {
-                    let date = e
-                        .occurred_at
-                        .with_timezone(&Local)
-                        .format("%d.%m.%Y")
-                        .to_string();
-                    if date != last_date {
-                        if !last_date.is_empty() {
-                            ui.add_space(8.);
-                        }
-                        ui.add_space(5.);
-                        label(
-                            ui,
-                            if e.occurred_at.with_timezone(&Local).date_naive()
-                                == Local::now().date_naive()
-                            {
-                                "HEUTE".into()
-                            } else {
-                                date.clone()
-                            },
-                            10.,
-                            p.faint,
-                        );
-                        ui.add_space(5.);
-                        last_date = date;
-                    }
-                    let selected = self.selected.as_deref() == Some(e.id.as_str());
-                    if event_card(ui, &e, selected, p).clicked() {
-                        self.select(e.id.clone());
+                for event in visible {
+                    if event_card(ui, &event, p).clicked() {
+                        self.open_event(&event);
                     }
                 }
             });
     }
-    fn inbox_actions(&mut self, ui: &mut Ui) {
-        ui.checkbox(&mut self.unread_only, "Ungelesen");
-        if ui.button("Alles gelesen").clicked() {
-            let result = self.store.as_ref().map_or(Ok(()), |store| store.read_all());
-            if result.is_ok() {
-                for event in &mut self.events {
-                    event.unread = false;
-                }
+    fn read_all(&mut self) {
+        let result = self.store.as_ref().map_or(Ok(()), |store| store.read_all());
+        if result.is_ok() {
+            for event in &mut self.events {
+                event.unread = false;
             }
-            self.report(result, "Alle als gelesen markiert.");
         }
-    }
-    fn detail(&mut self, ui: &mut Ui, event: &Event) {
-        let p = self.palette();
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(16., 16.), Sense::hover());
-            icons::paint(ui.painter(), r, event.kind.into(), p.kind(event.kind));
-            label(ui, event.kind.short(), 12., p.kind(event.kind));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if icons::button(ui, Icon::Close, "Detailansicht schließen", p).clicked() {
-                    self.selected = None;
-                }
-            });
-        });
-        ui.separator();
-        egui::ScrollArea::vertical()
-            .id_salt("event-details")
-            .max_height((ui.available_height() - 48.).max(40.))
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.add_space(6.);
-                label(ui, &event.title, 20., p.text);
-                ui.add_space(2.);
-                label(ui, &event.repository, 12., p.muted);
-                label(
-                    ui,
-                    format!(
-                        "@{} · {}",
-                        event.actor,
-                        event
-                            .occurred_at
-                            .with_timezone(&Local)
-                            .format("%d.%m. %H:%M")
-                    ),
-                    11.,
-                    p.faint,
-                );
-                ui.add_space(10.);
-                ui.separator();
-                ui.add_space(6.);
-                label(
-                    ui,
-                    if event.detail.is_empty() {
-                        "Kein zusätzlicher Kommentar."
-                    } else {
-                        &event.detail
-                    },
-                    13.,
-                    p.text,
-                );
-            });
-        ui.separator();
-        ui.horizontal_wrapped(|ui| {
-            if primary(ui, "Auf GitHub ↗", p).clicked() {
-                self.open(&event.url);
-            }
-            if ui
-                .button(if event.archived {
-                    "Wiederherstellen"
-                } else {
-                    "Erledigen"
-                })
-                .on_hover_text("Ändert nur den lokalen Posteingang.")
-                .clicked()
-            {
-                self.archive(&event.id, !event.archived);
-            }
-        });
+        self.report(result, "Alle als gelesen markiert.");
     }
 }
 impl eframe::App for HushApp {
@@ -974,7 +694,6 @@ impl eframe::App for HushApp {
                 tray::Event::Settings => {
                     self.start_hidden = false;
                     self.page = Page::Settings;
-                    self.selected = None;
                     tray::show_window(ctx);
                 }
                 tray::Event::Refresh => {
@@ -1011,11 +730,7 @@ impl eframe::App for HushApp {
             tray.update(tray::State {
                 running: self.running && self.status.alive(),
                 paused: self.config.paused(),
-                unread: self
-                    .events
-                    .iter()
-                    .filter(|e| e.unread && !e.archived)
-                    .count(),
+                unread: self.events.iter().filter(|e| e.unread).count(),
                 warning: self.status.notification_error.is_some()
                     || !self.status.warnings.is_empty()
                     || self.status.service_error.is_some()
@@ -1027,44 +742,19 @@ impl eframe::App for HushApp {
         if root.input(|i| i.modifiers.command && i.key_pressed(egui::Key::K)) {
             self.page = Page::Inbox;
             self.focus_search = true;
+            egui::Popup::close_all(root.ctx());
         }
         if root.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.selected = None;
-            self.message = None;
+            if !egui::Popup::is_any_open(root.ctx()) {
+                self.page = Page::Inbox;
+                self.message = None;
+            }
+            egui::Popup::close_all(root.ctx());
         }
         let p = self.palette();
         let rect = root.max_rect();
         root.painter().rect_filled(rect, 0, p.bg);
-        let side_width = if rect.width() < 840. { 56. } else { 188. };
-        let side = Rect::from_min_max(rect.min, pos2(rect.left() + side_width, rect.bottom()));
-        root.painter().rect_filled(side, 0, p.sidebar);
-        root.painter().line_segment(
-            [side.right_top(), side.right_bottom()],
-            Stroke::new(1., p.border),
-        );
-        let mut side_ui = root.new_child(
-            UiBuilder::new()
-                .id_salt("sidebar")
-                .max_rect(side.shrink2(vec2(8., 12.)))
-                .layout(Layout::top_down(Align::Min)),
-        );
-        side_ui.set_clip_rect(side);
-        self.sidebar(&mut side_ui);
-        let main = Rect::from_min_max(
-            pos2(side.right() + 16., rect.top() + 12.),
-            rect.right_bottom() - vec2(16., 12.),
-        );
-        let selected = self
-            .selected
-            .as_ref()
-            .and_then(|id| self.events.iter().find(|e| &e.id == id))
-            .cloned();
-        let split = self.page != Page::Settings && selected.is_some() && rect.width() >= 980.;
-        let content = if split {
-            Rect::from_min_max(main.min, pos2(main.right() - 344., main.bottom()))
-        } else {
-            main
-        };
+        let content = rect.shrink2(vec2(12., 10.));
         let mut ui = root.new_child(
             UiBuilder::new()
                 .id_salt("main")
@@ -1076,28 +766,8 @@ impl eframe::App for HushApp {
         self.notice(&mut ui);
         if self.page == Page::Settings {
             self.settings(&mut ui);
-        } else if selected.is_some() && !split {
-            self.detail(&mut ui, &selected.clone().unwrap());
         } else {
             self.inbox(&mut ui);
-        }
-        if split {
-            let detail = Rect::from_min_max(pos2(main.right() - 312., main.top()), main.max);
-            root.painter().line_segment(
-                [
-                    pos2(detail.left() - 16., rect.top()),
-                    pos2(detail.left() - 16., rect.bottom()),
-                ],
-                Stroke::new(1., p.border),
-            );
-            let mut detail_ui = root.new_child(
-                UiBuilder::new()
-                    .id_salt("details")
-                    .max_rect(detail)
-                    .layout(Layout::top_down(Align::Min)),
-            );
-            detail_ui.set_clip_rect(detail);
-            self.detail(&mut detail_ui, &selected.unwrap());
         }
         Toast::show(&mut self.message, root.ctx(), p);
     }
@@ -1135,58 +805,8 @@ fn paint_elided(
     ui.painter().galley(position, galley, color);
 }
 
-fn nav(
-    ui: &mut Ui,
-    icon: Icon,
-    text: &str,
-    count: Option<usize>,
-    selected: bool,
-    p: Palette,
-) -> bool {
-    let (r, response) = ui.allocate_exact_size(vec2(ui.available_width(), 30.), Sense::click());
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, text));
-    if selected || response.hovered() || response.has_focus() {
-        ui.painter()
-            .rect_filled(r, 5, if selected { p.hover } else { p.card });
-    }
-    let color = if selected { p.accent } else { p.muted };
-    let compact = r.width() < 100.;
-    let center = if compact {
-        r.center()
-    } else {
-        pos2(r.left() + 16., r.center().y)
-    };
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(center, vec2(16., 16.)),
-        icon,
-        color,
-    );
-    if !compact {
-        paint_elided(ui, r.min + vec2(32., 7.), text, 12., color, r.width() - 52.);
-    }
-    if let Some(n) = count.filter(|n| *n > 0) {
-        if compact {
-            ui.painter()
-                .circle_filled(r.right_top() + vec2(-5., 5.), 2., p.accent);
-        } else {
-            ui.painter().text(
-                r.right_center() - vec2(8., 0.),
-                Align2::RIGHT_CENTER,
-                n.to_string(),
-                FontId::proportional(10.),
-                p.faint,
-            );
-        }
-    }
-    response
-        .on_hover_text(if let Some(n) = count {
-            format!("{text} · {n} ungelesen")
-        } else {
-            text.into()
-        })
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+fn filter_popup_id() -> egui::Id {
+    egui::Id::new("inbox-filters")
 }
 
 fn setting_toggle(
@@ -1257,48 +877,40 @@ fn setting_toggle(
         })
 }
 
-fn event_card(ui: &mut Ui, event: &Event, selected: bool, p: Palette) -> egui::Response {
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 62.), Sense::hover());
+fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> egui::Response {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 56.), Sense::hover());
     let response = ui.interact(r, ui.id().with(&event.id), Sense::click());
-    if selected || response.hovered() || response.has_focus() {
-        ui.painter()
-            .rect_filled(r, 4, if selected { p.hover } else { p.card });
+    if response.hovered() || response.has_focus() {
+        ui.painter().rect_filled(r, 4, p.card);
     }
     ui.painter().line_segment(
         [r.left_bottom(), r.right_bottom()],
         Stroke::new(1., p.border),
     );
-    if selected {
-        ui.painter().rect_filled(
-            Rect::from_min_size(r.min + vec2(0., 12.), vec2(2., 38.)),
-            1,
-            p.accent,
-        );
-    }
     icons::paint(
         ui.painter(),
-        Rect::from_min_size(r.min + vec2(12., 12.), vec2(16., 16.)),
+        Rect::from_min_size(r.min + vec2(6., 9.), vec2(16., 16.)),
         event.kind.into(),
         p.kind(event.kind),
     );
     paint_elided(
         ui,
-        r.min + vec2(38., 10.),
+        r.min + vec2(30., 8.),
         &event.title,
-        14.,
+        13.,
         if event.unread { p.text } else { p.muted },
-        r.width() - 120.,
+        r.width() - 38.,
     );
     paint_elided(
         ui,
-        r.min + vec2(38., 35.),
-        &format!("{}  ·  @{}", event.repository, event.actor),
+        r.min + vec2(30., 31.),
+        &format!("{} · @{}", event.repository, event.actor),
         11.,
         p.faint,
-        r.width() - 50.,
+        r.width() - 110.,
     );
     ui.painter().text(
-        r.right_top() + vec2(-10., 14.),
+        r.right_top() + vec2(-6., 32.),
         Align2::RIGHT_TOP,
         age(event),
         FontId::proportional(10.5),
@@ -1306,21 +918,25 @@ fn event_card(ui: &mut Ui, event: &Event, selected: bool, p: Palette) -> egui::R
     );
     if event.unread {
         ui.painter()
-            .circle_filled(pos2(r.left() + 20., r.top() + 43.), 2.5, p.accent);
+            .circle_filled(pos2(r.left() + 14., r.top() + 37.), 2.5, p.accent);
     }
     if response.clicked() {
         response.request_focus();
     }
     response.widget_info(|| {
         egui::WidgetInfo::labeled(
-            egui::WidgetType::Button,
+            egui::WidgetType::Link,
             true,
-            format!("{}: {}", event.kind.short(), event.title),
+            format!(
+                "{}: {} – auf GitHub öffnen",
+                event.kind.short(),
+                event.title
+            ),
         )
     });
     response
         .on_hover_text(format!(
-            "{}\n{}\n{} · @{}",
+            "{}\n{}\n{} · @{}\nAuf GitHub öffnen",
             event.kind.short(),
             event.title,
             event.repository,

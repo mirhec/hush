@@ -31,7 +31,15 @@ Quell-Cursor werden nur nach erfolgreicher vollständiger Entdeckung aktualisier
 
 Die konkrete Ereignis-ID (z. B. Review-ID oder Kommentar-ID plus Namespace) verhindert wiederholte Hinweise auf dieselbe Aktivität. Das ist absichtlich nicht die veränderliche Notification-Thread-Zeit. Ein neu eingereichtes weiteres Review hat eine andere ID. Die Änderung eines bereits gemeldeten Kommentars ist kein neues Ereignis. Änderungen, die eine neue Erwähnung in einen bisher nicht gemeldeten Kommentar einfügen, können anhand `updated_at` berücksichtigt werden.
 
-Lesestatus/Archiv sind rein lokal. Eine neuere Zustellung bekommt ihren eigenen Ereigniseintrag. Es gibt keinen Schreibzugriff auf GitHub und keinen Abgleich zwischen Geräten.
+Der Lesestatus ist rein lokal. Eine neuere Zustellung bekommt ihren eigenen Ereigniseintrag. Es gibt keinen Schreibzugriff auf GitHub und keinen Abgleich zwischen Geräten. Die frühere Archivfunktion ist entfernt. Die alte SQLite-Spalte `archived` bleibt zur Kompatibilität erhalten; solche Einträge werden beim Lesen als gelesen in den gemeinsamen Verlauf aufgenommen. Alte JSON-Payloads bleiben lesbar, neue enthalten kein Archivfeld.
+
+## Posteingang und Navigation
+
+Die Oberfläche besteht aus einer Posteingangsliste mit Suche und Filtermenü. Das Fenster startet mit 440 × 640 Pixeln; die Mindestgröße beträgt 360 × 480. Beim Öffnen ist der Ungelesen-Filter aktiv. Das Menü enthält außerdem die Auswahl aller oder einer einzelnen Ereignisart und die Aktion, den gesamten Verlauf als gelesen zu markieren.
+
+Ein Klick auf einen Eintrag validiert den GitHub-Link und übergibt ihn an den Systembrowser. Erst nach einem erfolgreichen Browser-Aufruf wird der lokale Lesestatus gespeichert und die Liste aktualisiert. Ein Fehler beim Öffnen lässt den Eintrag ungelesen und erscheint als Toast. Ein erfolgreicher Aufruf bestätigt die Übergabe an den Browser, nicht das Laden der GitHub-Seite.
+
+Das Zahnrad oben rechts öffnet die Einstellungen mit den Tabs Benachrichtigungen, Konto und Diagnose. `Strg+K` / `Cmd+K` führt zur Suche; `Esc` schließt das Filtermenü oder kehrt aus den Einstellungen zum Posteingang zurück. Die Oberfläche hat keine separate Detailansicht, Seitenleiste oder Archivansicht.
 
 ## Fehler und Grenzen
 
@@ -47,4 +55,4 @@ Erstimport, deaktivierte Regeln, ausgeschaltete Systembenachrichtigungen und Ruh
 
 ## Erweitern
 
-Für tatsächlich vollständige, serverseitige Ereignisse über viele Organisationen wäre eine GitHub-App mit expliziten Installationen und signierten Webhooks sinnvoll. Das benötigt Infrastruktur und eine andere Vertrauens-/Berechtigungsstruktur; Hush 0.1 enthält dies ausdrücklich nicht. Weitere Detailschlüssel für mehrere Ressourcenbesitzer, Toast-Aktionen, ETag-Caching, verifizierte native UI-Screenshots und signierte Distributionen sind noch nicht implementiert.
+Für tatsächlich vollständige, serverseitige Ereignisse über viele Organisationen wäre eine GitHub-App mit expliziten Installationen und signierten Webhooks sinnvoll. Das benötigt Infrastruktur und eine andere Vertrauens-/Berechtigungsstruktur; Hush enthält dies nicht. Weitere Detailschlüssel für mehrere Ressourcenbesitzer, Toast-Aktionen und ETag-Caching sind noch nicht implementiert. Signierte Distributionen benötigen die in [RELEASING.md](RELEASING.md) beschriebenen Zertifikate und Secrets.

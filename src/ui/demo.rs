@@ -15,6 +15,6 @@ pub fn events()->Vec<Event> {
         (Kind::Request,"Extract reusable empty states","atelier/design-system","sam","Dir wurde dieser Pull Request zugewiesen.",1680,false),
     ];
     rows.into_iter().enumerate().map(|(i,(kind,title,repository,actor,detail,minutes,unread))|Event{
-        id:format!("demo:{i}"),kind,title:title.into(),repository:repository.into(),actor:actor.into(),detail:detail.into(),url:"https://github.com/notifications".into(),occurred_at:Utc::now()-Duration::minutes(minutes),unread,archived:false,
+        id:format!("demo:{i}"),kind,title:title.into(),repository:repository.into(),actor:actor.into(),detail:detail.into(),url:"https://github.com/notifications".into(),occurred_at:Utc::now()-Duration::minutes(minutes),unread,
     }).collect()
 }

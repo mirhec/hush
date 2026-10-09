@@ -37,7 +37,41 @@ fn event()->Event{filter::review(&review(),&repo(),"PR","alex","alex",since()).u
 #[test]fn disabled_rule_is_not_replayed()->anyhow::Result<()>{let(_temp,mut s)=database()?;let mut c=s.config()?;c.rules.reviews=false;s.save_config(&c)?;s.ingest("alex",&[event()],false)?;assert!(s.events()?.is_empty());c.rules.reviews=true;s.save_config(&c)?;assert_eq!(s.ingest("alex",&[event()],false)?,0);Ok(())}
 #[test]fn initial_cursor_is_quiet_then_overlaps()->anyhow::Result<()>{let(_temp,mut s)=database()?;assert!(s.cursor("notifications")?.1);let now=Utc::now();s.advance("alex","notifications",now)?;let(at,quiet)=s.cursor("notifications")?;assert!(!quiet);assert_eq!(at,now-Duration::minutes(2));Ok(())}
 #[test]fn stale_account_cannot_advance_or_ingest()->anyhow::Result<()>{let(_temp,mut s)=database()?;s.disconnect()?;s.advance("alex","notifications",Utc::now())?;assert!(s.cursor("notifications")?.1);assert_eq!(s.ingest("alex",&[event()],false)?,0);Ok(())}
-#[test]fn local_archive_is_reversible()->anyhow::Result<()>{let(_temp,mut s)=database()?;let e=event();s.ingest("alex",&[e.clone()],false)?;s.archive(&e.id,true)?;assert!(s.events()?[0].archived);assert!(!s.events()?[0].unread);s.archive(&e.id,false)?;assert!(!s.events()?[0].archived);Ok(())}
+#[test]
+fn legacy_archived_events_remain_in_history_as_read() -> anyhow::Result<()> {
+    let (temp, mut store) = database()?;
+    let archived = event();
+    let mut fresh = event();
+    fresh.id = "review:fresh".into();
+    store.ingest("alex", &[archived.clone(), fresh.clone()], false)?;
+
+    // Simulate the payload and columns written by a version with an archive.
+    let mut legacy_payload = serde_json::to_value(&archived)?;
+    legacy_payload["archived"] = json!(true);
+    let paths = Paths::at(temp.path().join("data"))?;
+    let connection = rusqlite::Connection::open(paths.db())?;
+    connection.execute(
+        "UPDATE events SET payload=?2,archived=1,unread=0,notified=1 WHERE id=?1",
+        rusqlite::params![archived.id, serde_json::to_string(&legacy_payload)?],
+    )?;
+    drop(connection);
+    drop(store);
+
+    let store = Store::open(&paths)?;
+    let history = store.events()?;
+    assert_eq!(history.len(), 2);
+    let previous = history.iter().find(|event| event.id == archived.id).unwrap();
+    let current = history.iter().find(|event| event.id == fresh.id).unwrap();
+    assert!(!previous.unread);
+    assert!(current.unread);
+    assert_eq!(store.outbox()?.len(), 1);
+    assert_eq!(store.outbox()?[0].id, fresh.id);
+    assert!(serde_json::to_value(&history[0])?.get("archived").is_none());
+
+    store.read_all()?;
+    assert!(store.events()?.iter().all(|event| !event.unread));
+    Ok(())
+}
 #[test]fn quiet_tasks_do_not_turn_into_old_banners()->anyhow::Result<()>{let(_temp,mut s)=database()?;let mut t=ThreadTask{id:"thread:1".into(),repository:repo(),subject_type:"PullRequest".into(),title:"PR".into(),subject_url:"https://api.github.com/repos/atelier/web/pulls/1".into(),latest_comment_url:None,reason:"review_requested".into(),since:Utc::now()-Duration::hours(24),quiet:true};s.enqueue("alex",&t)?;t.since=since();t.quiet=false;s.enqueue("alex",&t)?;let result=&s.tasks(1)?[0];assert!(!result.quiet);assert_eq!(result.since,t.since);Ok(())}
 #[test]fn retention_caps_visible_history()->anyhow::Result<()>{let(_temp,mut s)=database()?;let values:Vec<_>=(0..510).map(|i|{let mut e=event();e.id=format!("review:{i}");e}).collect();s.ingest("alex",&values,true)?;assert_eq!(s.events()?.len(),500);Ok(())}
 #[cfg(unix)]#[test]fn private_unix_directory_and_database()->anyhow::Result<()>{use std::os::unix::fs::PermissionsExt;let temp=tempfile::tempdir()?;let paths=Paths::at(temp.path().join("data"))?;let _s=Store::open(&paths)?;assert_eq!(std::fs::metadata(&paths.root)?.permissions().mode()&0o777,0o700);assert_eq!(std::fs::metadata(paths.db())?.permissions().mode()&0o777,0o600);Ok(())}
