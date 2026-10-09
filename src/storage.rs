@@ -426,6 +426,12 @@ impl Store {
             .execute("UPDATE events SET unread=0 WHERE id=?1", [id])?;
         Ok(())
     }
+    pub fn unread(&self, id: &str) -> Result<()> {
+        // Restore legacy archived items too, without replaying desktop notifications.
+        self.conn
+            .execute("UPDATE events SET unread=1,archived=0 WHERE id=?1", [id])?;
+        Ok(())
+    }
     pub fn read_all(&self) -> Result<()> {
         self.conn.execute("UPDATE events SET unread=0", [])?;
         Ok(())
@@ -506,6 +512,40 @@ mod tests {
         db.clear_history()?;
         assert_eq!(db.ingest("alice", &[event()], false)?, 0);
         assert_eq!(db.ingest("someone-else", &[event()], false)?, 0);
+        Ok(())
+    }
+    #[test]
+    fn marking_unread_persists_without_replaying_notifications_or_changing_event_data() -> Result<()>
+    {
+        let temp = tempfile::tempdir()?;
+        let paths = Paths::at(temp.path().join("data"))?;
+        let mut store = Store::open(&paths)?;
+        store.save_config(&Config {
+            login: "alice".into(),
+            ..Default::default()
+        })?;
+        let original = event();
+        store.ingest("alice", std::slice::from_ref(&original), true)?;
+        store.read(&original.id)?;
+        // Archived rows from older versions must become visible as unread too.
+        store
+            .conn
+            .execute("UPDATE events SET archived=1 WHERE id=?1", [&original.id])?;
+        assert!(!store.events()?[0].unread);
+        store.unread(&original.id)?;
+        drop(store);
+
+        let mut reopened = Store::open(&paths)?;
+        let restored = reopened.events()?.remove(0);
+        assert!(restored.unread);
+        assert_eq!(
+            serde_json::to_value(&restored)?,
+            serde_json::to_value(&original)?
+        );
+        assert!(reopened.outbox()?.is_empty());
+        assert_eq!(reopened.ingest("alice", &[original], false)?, 0);
+        assert!(reopened.events()?[0].unread);
+        assert!(reopened.outbox()?.is_empty());
         Ok(())
     }
     #[test]

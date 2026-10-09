@@ -412,6 +412,59 @@ fn github_action_is_keyboard_reachable_and_does_not_activate_the_row() {
 }
 
 #[test]
+fn unread_action_is_keyboard_reachable_and_separate_from_row_and_github() {
+    for width in [280., 336., 416.] {
+        let ctx = egui::Context::default();
+        let mut event = demo::events().remove(0);
+        event.unread = false;
+        let mut responses = None;
+        let mut run = |events| {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |ui| {
+                    ui.set_width(width);
+                    responses = Some(event_card(ui, &event, Palette::dark(), Language::De));
+                },
+            );
+            output.textures_delta.clear();
+            responses.take().unwrap()
+        };
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let first = run(vec![]);
+        let unread = first.unread.as_ref().unwrap();
+        assert!(first.row.rect.contains_rect(unread.rect));
+        assert!(first.row.rect.contains_rect(first.github.rect));
+        assert!(!unread.rect.intersects(first.github.rect));
+        assert_eq!(first.row.rect.height(), 56.);
+        ctx.memory_mut(|memory| memory.request_focus(first.row.id));
+        run(vec![key(egui::Key::Tab, true)]);
+        let focused = run(vec![key(egui::Key::Tab, false)]);
+        assert!(focused.unread.as_ref().unwrap().has_focus());
+        run(vec![key(egui::Key::Tab, true)]);
+        let focused = run(vec![key(egui::Key::Tab, false)]);
+        assert!(focused.github.has_focus());
+        for activation in [egui::Key::Enter, egui::Key::Space] {
+            ctx.memory_mut(|memory| memory.request_focus(unread.id));
+            let clicked = run(vec![key(activation, true)]);
+            assert!(clicked.unread.unwrap().clicked());
+            assert!(!clicked.row.clicked());
+            assert!(!clicked.github.clicked());
+            assert!(ctx.memory(|memory| memory.has_focus(first.row.id)));
+            run(vec![key(activation, false)]);
+        }
+    }
+}
+
+#[test]
 fn narrow_settings_keep_footer_visible_and_preserve_drafts() {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx);
@@ -495,6 +548,64 @@ fn clicking_an_event_persists_read_state_without_opening_github() {
     assert_eq!(app.visible_events().len(), 8);
     let labels = draw(&ctx, &mut app, size, vec![]);
     assert!(labels.iter().any(|(text, _)| text == &event.title));
+}
+
+#[test]
+fn unread_button_restores_persisted_read_event_without_opening_github() {
+    for width in [360., 440.] {
+        let ctx = egui::Context::default();
+        let mut app = demo_app(&ctx);
+        let temporary = tempfile::tempdir().unwrap();
+        let paths = Paths::at(temporary.path().join("data")).unwrap();
+        let mut store = Store::open(&paths).unwrap();
+        store.save_config(&app.config).unwrap();
+        let event = app.events[0].clone();
+        store
+            .ingest("alex", std::slice::from_ref(&event), true)
+            .unwrap();
+        app.store = Some(store);
+        app.open_url = |_| panic!("Marking unread must not open the browser");
+        let size = vec2(width, 480.);
+        draw(&ctx, &mut app, size, vec![]);
+        click_text(&ctx, &mut app, size, &event.title);
+        assert!(!app.events[0].unread);
+        let labels = draw(&ctx, &mut app, size, vec![]);
+        let title_rect = labels
+            .iter()
+            .find(|(text, _)| text == &event.title)
+            .unwrap()
+            .1;
+        let position = pos2(size.x - 58., title_rect.top() + 10.);
+        draw(
+            &ctx,
+            &mut app,
+            size,
+            vec![egui::Event::PointerMoved(position)],
+        );
+        for pressed in [true, false] {
+            draw(
+                &ctx,
+                &mut app,
+                size,
+                vec![egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        assert!(app.events[0].unread);
+        assert!(Store::open(&paths).unwrap().events().unwrap()[0].unread);
+        assert!(app.store.as_ref().unwrap().outbox().unwrap().is_empty());
+        assert_eq!(app.visible_events().len(), 8);
+        app.unread_only = true;
+        assert!(app.visible_events().iter().any(|item| item.id == event.id));
+        app.unread_only = false;
+        click_text(&ctx, &mut app, size, &event.title);
+        assert!(!app.events[0].unread);
+        assert!(!Store::open(&paths).unwrap().events().unwrap()[0].unread);
+    }
 }
 
 #[test]

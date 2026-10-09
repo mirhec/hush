@@ -156,7 +156,15 @@ impl NativeTray {
             refresh,
         })
     }
-    fn update(&self, state: &State) {
+    fn update(&self, state: &State, icon_changed: bool) -> Result<()> {
+        if icon_changed {
+            let data = icon_with_unread(state.unread > 0);
+            self.icon.set_icon(Some(tray_icon::Icon::from_rgba(
+                data.rgba,
+                data.width,
+                data.height,
+            )?))?;
+        }
         let language = state.language;
         let text = state.title();
         self.open.set_text(language.text("Hush öffnen"));
@@ -173,6 +181,7 @@ impl NativeTray {
         }));
         self.start.set_enabled(!state.running);
         self.refresh.set_enabled(state.running);
+        Ok(())
     }
 }
 
@@ -182,6 +191,8 @@ pub struct Tray {
     commands: Sender<Option<State>>,
     #[cfg(not(target_os = "linux"))]
     native: NativeTray,
+    #[cfg(not(target_os = "linux"))]
+    sink: Events,
     last_state: Option<State>,
 }
 impl Tray {
@@ -219,6 +230,7 @@ impl Tray {
             Ok(Self {
                 events,
                 native,
+                sink,
                 last_state: None,
             })
         }
@@ -230,7 +242,16 @@ impl Tray {
         #[cfg(target_os = "linux")]
         let _ = self.commands.send(Some(state.clone()));
         #[cfg(not(target_os = "linux"))]
-        self.native.update(&state);
+        {
+            let had_unread = self
+                .last_state
+                .as_ref()
+                .is_some_and(|state| state.unread > 0);
+            if let Err(error) = self.native.update(&state, had_unread != (state.unread > 0)) {
+                self.sink.send(Event::Error(format!("{error:#}")));
+                return;
+            }
+        }
         self.last_state = Some(state);
     }
 }
@@ -271,5 +292,67 @@ pub fn icon() -> egui::IconData {
         rgba,
         width: size as u32,
         height: size as u32,
+    }
+}
+
+/// Composite the unread indicator into the tray pixels so every host can show it.
+/// The application/window icon stays unchanged, and the exact count is in the tooltip.
+pub(super) fn icon_with_unread(unread: bool) -> egui::IconData {
+    let mut data = icon();
+    if !unread {
+        return data;
+    }
+    for y in 0..data.height {
+        for x in 0..data.width {
+            let distance =
+                ((x as f32 + 0.5 - 50.0).powi(2) + (y as f32 + 0.5 - 14.0).powi(2)).sqrt();
+            let offset = ((y * data.width + x) * 4) as usize;
+            let pixel = &mut data.rgba[offset..offset + 4];
+            // The pale rim keeps the dot visible on both dark and light panels.
+            for (radius, color) in [(12.0, [242, 245, 242]), (9.5, [240, 76, 91])] {
+                let coverage = (radius + 0.5 - distance).clamp(0.0, 1.0);
+                if coverage == 0.0 {
+                    continue;
+                }
+                let background = pixel[3] as f32 / 255.0 * (1.0 - coverage);
+                let alpha = coverage + background;
+                for channel in 0..3 {
+                    pixel[channel] = ((color[channel] as f32 * coverage
+                        + pixel[channel] as f32 * background)
+                        / alpha)
+                        .round() as u8;
+                }
+                pixel[3] = (alpha * 255.0).round() as u8;
+            }
+        }
+    }
+    data
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unread_indicator_is_visible_without_changing_the_application_icon() {
+        let plain = icon();
+        let clear = icon_with_unread(false);
+        let unread = icon_with_unread(true);
+        assert_eq!(plain.rgba, clear.rgba);
+        assert_eq!((unread.width, unread.height), (plain.width, plain.height));
+        assert_eq!(
+            unread.rgba.len(),
+            (unread.width * unread.height * 4) as usize
+        );
+        fn pixel(data: &egui::IconData, x: u32, y: u32) -> &[u8] {
+            let offset = ((y * data.width + x) * 4) as usize;
+            &data.rgba[offset..offset + 4]
+        }
+        assert_eq!(pixel(&unread, 50, 14), [240, 76, 91, 255]);
+        assert_eq!(pixel(&unread, 50, 3), [242, 245, 242, 255]);
+        assert_eq!(pixel(&unread, 0, 0), [0, 0, 0, 0]);
+        assert_eq!(pixel(&unread, 21, 30), pixel(&plain, 21, 30));
+        assert_eq!(icon().rgba, plain.rgba);
+        assert_eq!(icon_with_unread(false).rgba, plain.rgba);
     }
 }

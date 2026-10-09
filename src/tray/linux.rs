@@ -41,6 +41,12 @@ impl Default for Model {
     }
 }
 impl Model {
+    fn update(&mut self, state: State) -> bool {
+        let icon_changed = (self.state.unread > 0) != (state.unread > 0);
+        self.state = state;
+        self.revision = self.revision.wrapping_add(1);
+        icon_changed
+    }
     fn title(&self) -> String {
         self.state.title()
     }
@@ -165,11 +171,12 @@ impl Model {
             "Menu" => glib::variant::ObjectPath::try_from(MENU)
                 .unwrap()
                 .to_variant(),
-            "IconPixmap" => pixmap().to_variant(),
+            // Bake the badge into the main icon; hosts need not support overlays.
+            "IconPixmap" => pixmap(self.state.unread > 0).to_variant(),
             "AttentionIconPixmap" | "OverlayIconPixmap" => {
                 Vec::<(i32, i32, Vec<u8>)>::new().to_variant()
             }
-            "ToolTip" => ("", pixmap(), "Hush", self.title()).to_variant(),
+            "ToolTip" => ("", pixmap(self.state.unread > 0), "Hush", self.title()).to_variant(),
             _ => "".to_variant(),
         }
     }
@@ -180,8 +187,9 @@ fn activate(method: &str, events: &Events) {
         events.send(Event::Open);
     }
 }
-fn pixmap() -> Vec<(i32, i32, Vec<u8>)> {
-    let icon = super::icon();
+fn pixmap(unread: bool) -> Vec<(i32, i32, Vec<u8>)> {
+    let icon = super::icon_with_unread(unread);
+    // StatusNotifier pixmaps use ARGB32 in network byte order.
     let pixels = icon
         .rgba
         .chunks_exact(4)
@@ -327,8 +335,11 @@ fn run_inner(
                 match updates.try_recv() {
                     Ok(Some(state)) => {
                         let mut model = model.lock().unwrap();
-                        model.state = state;
-                        model.revision = model.revision.wrapping_add(1);
+                        let icon_changed = model.update(state);
+                        if icon_changed {
+                            let _ =
+                                connection.emit_signal(None, ITEM, ITEM_INTERFACE, "NewIcon", None);
+                        }
                         let _ = connection.emit_signal(
                             None,
                             MENU,
@@ -364,6 +375,70 @@ fn run_inner(
 mod tests {
     use super::*;
     use std::sync::mpsc;
+
+    #[test]
+    fn unread_badge_updates_main_and_tooltip_pixmaps_in_argb_order() {
+        let read_pixmap = pixmap(false);
+        let unread_pixmap = pixmap(true);
+        assert_ne!(read_pixmap, unread_pixmap);
+        for (unread, wire) in [(false, &read_pixmap), (true, &unread_pixmap)] {
+            let rgba = super::super::icon_with_unread(unread);
+            assert_eq!(wire.len(), 1);
+            assert_eq!(
+                (wire[0].0, wire[0].1),
+                (rgba.width as i32, rgba.height as i32)
+            );
+            assert_eq!(wire[0].2.len(), rgba.rgba.len());
+            for (argb, rgba) in wire[0]
+                .2
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(rgba.rgba.as_chunks::<4>().0)
+            {
+                assert_eq!(*argb, [rgba[3], rgba[0], rgba[1], rgba[2]]);
+            }
+        }
+        let assert_icon = |model: &Model, expected: &Vec<(i32, i32, Vec<u8>)>| {
+            assert_eq!(
+                model
+                    .item_property("IconPixmap")
+                    .get::<Vec<(i32, i32, Vec<u8>)>>()
+                    .as_ref(),
+                Some(expected)
+            );
+            let tooltip = model.item_property("ToolTip");
+            assert_eq!(
+                tooltip
+                    .child_value(1)
+                    .get::<Vec<(i32, i32, Vec<u8>)>>()
+                    .as_ref(),
+                Some(expected)
+            );
+            assert!(
+                model
+                    .item_property("OverlayIconPixmap")
+                    .get::<Vec<(i32, i32, Vec<u8>)>>()
+                    .unwrap()
+                    .is_empty()
+            );
+        };
+        let mut model = Model::default();
+        assert_icon(&model, &read_pixmap);
+        let mut state = model.state.clone();
+        state.unread = 1;
+        assert!(model.update(state.clone()));
+        assert_icon(&model, &unread_pixmap);
+        state.unread = 27;
+        assert!(!model.update(state.clone()));
+        state.paused = true;
+        state.warning = true;
+        assert!(!model.update(state.clone()));
+        assert_icon(&model, &unread_pixmap);
+        state.unread = 0;
+        assert!(model.update(state));
+        assert_icon(&model, &read_pixmap);
+    }
 
     #[test]
     #[ignore = "Requires HUSH_ISOLATED_DBUS_TEST=1 and dbus-run-session"]
@@ -464,6 +539,58 @@ mod tests {
                         .try_iter()
                         .any(|event| matches!(event, Event::Available(true)))
                 });
+                let (signal_tx, signals) = mpsc::channel();
+                let subscription = bus.signal_subscribe(
+                    Some(&peer),
+                    Some(ITEM_INTERFACE),
+                    None,
+                    Some(ITEM),
+                    None,
+                    gio::DBusSignalFlags::NONE,
+                    move |_, _, _, _, name, _| {
+                        signal_tx.send(name.to_owned()).unwrap();
+                    },
+                );
+                let read_property = |property| {
+                    let result = bus
+                        .call_sync(
+                            Some(&peer),
+                            ITEM,
+                            "org.freedesktop.DBus.Properties",
+                            "Get",
+                            Some(&(ITEM_INTERFACE, property).to_variant()),
+                            None,
+                            gio::DBusCallFlags::NONE,
+                            2000,
+                            None::<&gio::Cancellable>,
+                        )
+                        .unwrap();
+                    result.get::<(Variant,)>().unwrap().0
+                };
+                assert_eq!(read_property("IconPixmap"), pixmap(false).to_variant());
+                let mut state = Model::default().state;
+                for (unread, expect_icon_signal) in [(1, true), (27, false), (0, true)] {
+                    state.unread = unread;
+                    state.paused = true;
+                    state.warning = true;
+                    updates.send(Some(state.clone())).unwrap();
+                    let mut icon_signal = false;
+                    let mut tooltip_signal = false;
+                    wait(&mut || {
+                        for signal in signals.try_iter() {
+                            icon_signal |= signal == "NewIcon";
+                            tooltip_signal |= signal == "NewToolTip";
+                        }
+                        tooltip_signal
+                    });
+                    assert_eq!(icon_signal, expect_icon_signal);
+                    assert_eq!(read_property("IconPixmap"), pixmap(unread > 0).to_variant());
+                    assert_eq!(
+                        read_property("ToolTip").child_value(1),
+                        pixmap(unread > 0).to_variant()
+                    );
+                }
+                bus.signal_unsubscribe(subscription);
                 let call_item = |method, parameters: &Variant| {
                     bus.call_sync(
                         Some(&peer),

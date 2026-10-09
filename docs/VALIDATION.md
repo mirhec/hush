@@ -5,6 +5,13 @@ results describe the code and environment at that time, including features that
 have since changed. They are not a claim that every check was rerun against the
 latest revision.
 
+## Unread tray indicator and mark-as-unread action
+
+- **97 Rust tests passed** with `cargo test --locked --offline --all-targets`. New coverage checks tray badge transitions and ARGB pixmaps, persistent unread state without replaying desktop notifications, legacy archived entries, independent row/GitHub/unread actions, keyboard activation, and narrow layouts.
+- Clippy passed with the same five existing suggestions; the Linux release build passed.
+- Native egui captures of the mark-as-unread action were inspected at 360 × 480 in dark and light themes. The generated tray pixels were inspected at small panel sizes on light and dark backgrounds.
+- The isolated D-Bus integration test now checks `NewIcon` signals and exported pixels for read → unread → read transitions. It could not run here because the sandbox prevents the isolated bus from binding a Unix socket. Native Niri/DMS, Windows, and macOS tray rendering still needs target-desktop validation.
+
 ## Multilingual UI and appearance
 
 - **92 Rust tests passed** with `cargo test --locked --offline --all-targets`, including seven-language catalog/placeholder coverage, safe diagnostic translation, persisted appearance without saving unrelated drafts, language changes in tray menus, notification preview privacy, and narrow translated settings with CJK glyph coverage.
