@@ -53,6 +53,8 @@ impl Rules {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct Config {
+    pub language: crate::i18n::Language,
+    pub light_theme: bool,
     pub login: String,
     pub rules: Rules,
     pub repositories: Vec<Repo>,
@@ -68,7 +70,7 @@ pub struct Config {
 }
 impl Default for Config {
     fn default() -> Self {
-        Self { login: String::new(), rules: Rules::default(), repositories: vec![], manual_teams: vec![],
+        Self { language: crate::i18n::Language::default(), light_theme: false, login: String::new(), rules: Rules::default(), repositories: vec![], manual_teams: vec![],
             interval_secs: 120, desktop_notifications: true, show_preview: false,
             paused_until: 0, has_detail_token: false, oauth: false, read_org: false, revision: 0 }
     }

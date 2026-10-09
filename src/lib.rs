@@ -2,6 +2,7 @@
 pub mod api;
 pub mod engine;
 pub mod filter;
+pub mod i18n;
 pub mod model;
 pub mod notify;
 pub mod oauth;

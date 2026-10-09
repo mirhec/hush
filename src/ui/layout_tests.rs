@@ -42,14 +42,113 @@ fn settings_rows_keep_equal_width_and_align_switches_with_tooltips() {
 }
 
 fn demo_app(ctx: &egui::Context) -> HushApp {
-    HushApp::new(
+    let mut app = HushApp::new(
         &eframe::CreationContext::_new_kittest(ctx.clone()),
         None,
         None,
         Config::default(),
         true,
         false,
-    )
+    );
+    app.config.language = Language::De;
+    app.draft.language = Language::De;
+    app
+}
+
+#[test]
+fn language_and_theme_changes_persist_without_saving_other_drafts() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = Paths::at(temporary.path().join("data")).unwrap();
+    let mut store = Store::open(&paths).unwrap();
+    store.save_config(&app.config).unwrap();
+    app.store = Some(store);
+    app.page = Page::Settings;
+    app.repos_text = "example/unsaved".into();
+    app.draft.show_preview = true;
+    let size = vec2(360., 480.);
+    draw(&ctx, &mut app, size, vec![]);
+    click_text(&ctx, &mut app, size, "Deutsch");
+    click_text(&ctx, &mut app, size, "日本語");
+    assert_eq!(app.language(), Language::Ja);
+    assert_eq!(
+        Store::open(&paths).unwrap().config().unwrap().language,
+        Language::Ja
+    );
+    assert_eq!(app.repos_text, "example/unsaved");
+    assert!(app.draft.show_preview);
+    assert!(!Store::open(&paths).unwrap().config().unwrap().show_preview);
+    app.save_appearance(Language::En, true, &ctx);
+    let saved = Store::open(&paths).unwrap().config().unwrap();
+    assert_eq!(saved.language, Language::En);
+    assert!(saved.light_theme && app.light);
+    assert_eq!(saved.login, "alex");
+    let labels = draw(&ctx, &mut app, size, vec![]);
+    assert!(labels.iter().any(|(text, _)| text == "Settings"));
+    assert!(labels.iter().any(|(text, _)| text == "Save"));
+}
+
+#[test]
+fn all_languages_fit_narrow_settings_and_preserve_github_content() {
+    for language in Language::ALL
+        .into_iter()
+        .filter(|language| *language != Language::System)
+    {
+        let ctx = egui::Context::default();
+        let mut app = demo_app(&ctx);
+        app.config.language = language;
+        app.draft.language = language;
+        theme::fonts(&ctx, language);
+        let size = vec2(360., 480.);
+        app.events[0].title = "Einstellungen gespeichert. {count}".into();
+        draw(&ctx, &mut app, size, vec![]);
+        let labels = draw(&ctx, &mut app, size, vec![]);
+        assert!(
+            labels
+                .iter()
+                .any(|(text, _)| text == language.text("Posteingang"))
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|(text, _)| text == "Einstellungen gespeichert. {count}")
+        );
+        app.page = Page::Settings;
+        for tab in [
+            SettingsTab::Notifications,
+            SettingsTab::Account,
+            SettingsTab::Diagnostics,
+        ] {
+            app.settings_tab = tab;
+            draw(&ctx, &mut app, size, vec![]);
+            let labels = draw(&ctx, &mut app, size, vec![]);
+            for title in ["Sprache", "Benachrichtigungen", "Konto", "Diagnose"] {
+                let rect = labels
+                    .iter()
+                    .find(|(text, _)| text == language.text(title))
+                    .unwrap_or_else(|| panic!("{language:?}: missing {title}"))
+                    .1;
+                assert!(
+                    Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect),
+                    "{language:?}: {title} is outside the window: {rect:?}"
+                );
+            }
+            if tab != SettingsTab::Diagnostics {
+                let rect = labels
+                    .iter()
+                    .find(|(text, _)| text == language.text("Speichern"))
+                    .unwrap()
+                    .1;
+                assert!(Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect));
+            }
+        }
+        ctx.fonts_mut(|fonts| {
+            let font = FontId::proportional(13.);
+            assert!(fonts.has_glyphs(&font, "简体中文日本語设置通知設定確認審査"));
+            assert!(fonts.has_glyphs(&font, language.text("Benachrichtigungen")));
+        });
+    }
 }
 
 fn draw(
@@ -147,7 +246,9 @@ fn narrow_inbox_defaults_to_all_recent_events_and_keeps_rows_compact() {
         let mut rect = Rect::NOTHING;
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.set_width(width);
-            rect = event_card(ui, &event, Palette::dark()).row.rect;
+            rect = event_card(ui, &event, Palette::dark(), Language::De)
+                .row
+                .rect;
         });
         output.textures_delta.clear();
         assert_eq!(rect.height(), 56.);
@@ -281,7 +382,7 @@ fn github_action_is_keyboard_reachable_and_does_not_activate_the_row() {
             },
             |ui| {
                 ui.set_width(336.);
-                responses = Some(event_card(ui, &event, Palette::dark()));
+                responses = Some(event_card(ui, &event, Palette::dark(), Language::De));
             },
         );
         output.textures_delta.clear();

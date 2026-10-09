@@ -3,11 +3,41 @@ use super::*;
 impl HushApp {
     pub(super) fn settings(&mut self, ui: &mut Ui) {
         let p = self.palette();
+        let l = self.language();
+        ui.horizontal(|ui| {
+            label(ui, l.text("Sprache"), 12., p.muted);
+            let mut language = self.config.language;
+            let selected = if language == Language::System {
+                l.format("System ({language})", &[("language", l.native_name())])
+            } else {
+                language.native_name().to_owned()
+            };
+            egui::ComboBox::from_id_salt("language")
+                .selected_text(selected)
+                .height(280.)
+                .width((ui.available_width() - 8.).min(210.))
+                .show_ui(ui, |ui| {
+                    for option in Language::ALL {
+                        let title = if option == Language::System {
+                            l.text("Systemsprache")
+                        } else {
+                            option.native_name()
+                        };
+                        ui.selectable_value(&mut language, option, title);
+                    }
+                })
+                .response
+                .on_hover_text(l.text("Sprache und Darstellung werden automatisch gespeichert."));
+            if language != self.config.language {
+                self.save_appearance(language, self.light, ui.ctx());
+            }
+        });
+        ui.add_space(4.);
         ui.horizontal_wrapped(|ui| {
             for (tab, title) in [
-                (SettingsTab::Notifications, "Benachrichtigungen"),
-                (SettingsTab::Account, "Konto"),
-                (SettingsTab::Diagnostics, "Diagnose"),
+                (SettingsTab::Notifications, l.text("Benachrichtigungen")),
+                (SettingsTab::Account, l.text("Konto")),
+                (SettingsTab::Diagnostics, l.text("Diagnose")),
             ] {
                 ui.selectable_value(&mut self.settings_tab, tab, title);
             }
@@ -28,7 +58,7 @@ impl HushApp {
         ui.separator();
         ui.horizontal_wrapped(|ui| {
             if self.settings_tab == SettingsTab::Diagnostics {
-                if !self.demo && ui.button("Hush beenden").clicked() {
+                if !self.demo && ui.button(l.text("Hush beenden")).clicked() {
                     self.quit(ui.ctx());
                 }
                 label(
@@ -38,11 +68,11 @@ impl HushApp {
                     p.faint,
                 );
             } else {
-                if primary(ui, "Speichern", p).clicked() {
+                if primary(ui, l.text("Speichern"), p).clicked() {
                     self.save_settings();
                 }
                 if self.settings_tab == SettingsTab::Notifications
-                    && ui.button("Test-Benachrichtigung").clicked()
+                    && ui.button(l.text("Test-Benachrichtigung")).clicked()
                 {
                     self.start_service(ui.ctx());
                     let result = self
@@ -52,9 +82,9 @@ impl HushApp {
                     self.report(
                         result,
                         if self.demo {
-                            "Demo: keine System-Benachrichtigung gesendet."
+                            l.text("Demo: keine System-Benachrichtigung gesendet.")
                         } else {
-                            "Test-Benachrichtigung angefragt."
+                            l.text("Test-Benachrichtigung angefragt.")
                         },
                     );
                 }
@@ -76,24 +106,25 @@ impl HushApp {
 
     fn event_preferences(&mut self, ui: &mut Ui) {
         let p = self.palette();
-        section(ui, "Ereignisse", p);
+        let l = self.language();
+        section(ui, l.text("Ereignisse"), p);
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = 2.;
             for (kind, help) in [
                 (
                     Kind::Request,
-                    "Zuweisungen und Review-Anfragen an dich oder dein Team.",
+                    l.text("Zuweisungen und Review-Anfragen an dich oder dein Team."),
                 ),
                 (
                     Kind::Issue,
-                    "Neue Issues in den unten eingetragenen Repositories.",
+                    l.text("Neue Issues in den unten eingetragenen Repositories."),
                 ),
-                (Kind::Review, "Reviews zu deinen Pull Requests."),
-                (Kind::Mention, "Neue @Erwähnungen in Kommentaren."),
+                (Kind::Review, l.text("Reviews zu deinen Pull Requests.")),
+                (Kind::Mention, l.text("Neue @Erwähnungen in Kommentaren.")),
             ] {
                 setting_toggle(
                     ui,
-                    kind.label(),
+                    l.text(kind.label()),
                     help,
                     self.draft.rules.get_mut(kind),
                     p,
@@ -101,7 +132,7 @@ impl HushApp {
                 );
             }
         });
-        section(ui, "Issue-Repositories", p);
+        section(ui, l.text("Issue-Repositories"), p);
         ui.add(
             egui::TextEdit::multiline(&mut self.repos_text)
                 .hint_text("organisation/repository")
@@ -109,9 +140,9 @@ impl HushApp {
                 .desired_width(f32::INFINITY)
                 .margin(vec2(8., 6.)),
         );
-        label(ui, "Ein Repository pro Zeile", 11., p.faint);
+        label(ui, l.text("Ein Repository pro Zeile"), 11., p.faint);
         if !self.demo && !self.config.repositories.is_empty() {
-            egui::CollapsingHeader::new("Repository-Zugriff")
+            egui::CollapsingHeader::new(l.text("Repository-Zugriff"))
                 .default_open(
                     self.status
                         .repositories
@@ -138,16 +169,18 @@ impl HushApp {
                             label(ui, name, 12., p.text);
                             ui.label(
                                 RichText::new(if error.is_some() {
-                                    "Kein Zugriff"
+                                    l.text("Kein Zugriff")
                                 } else if check.is_some() {
-                                    "Verbunden"
+                                    l.text("Verbunden")
                                 } else {
-                                    "Noch nicht geprüft"
+                                    l.text("Noch nicht geprüft")
                                 })
                                 .size(11.)
                                 .color(if error.is_some() { p.danger } else { p.muted }),
                             )
-                            .on_hover_text(error.unwrap_or("Status des letzten Issue-Abrufs."));
+                            .on_hover_text(
+                                l.message(error.unwrap_or("Status des letzten Issue-Abrufs.")),
+                            );
                         });
                     }
                 });
@@ -156,52 +189,63 @@ impl HushApp {
 
     fn delivery_preferences(&mut self, ui: &mut Ui) {
         let p = self.palette();
-        section(ui, "Desktop", p);
+        let l = self.language();
+        section(ui, l.text("Desktop"), p);
         ui.scope(|ui| {
             ui.spacing_mut().item_spacing.y = 2.;
-            setting_toggle(ui, "Desktop-Benachrichtigungen", "Auch bei geschlossenem Fenster.", &mut self.draft.desktop_notifications, p, None);
-            setting_toggle(ui, "Inhalte im Banner anzeigen", "Titel, Personen und Repository-Namen. Ausgeschaltet bleiben Inhalte im Banner privat.", &mut self.draft.show_preview, p, None);
+            setting_toggle(ui, l.text("Desktop-Benachrichtigungen"), l.text("Auch bei geschlossenem Fenster."), &mut self.draft.desktop_notifications, p, None);
+            setting_toggle(ui, l.text("Inhalte im Banner anzeigen"), l.text("Titel, Personen und Repository-Namen. Ausgeschaltet bleiben Inhalte im Banner privat."), &mut self.draft.show_preview, p, None);
         });
-        section(ui, "Aktualisierung", p);
+        section(ui, l.text("Aktualisierung"), p);
         ui.horizontal_wrapped(|ui| {
-            for (seconds, title) in [(60, "1 Min."), (120, "2 Min."), (300, "5 Min.")] {
+            for (seconds, title) in [
+                (60, l.text("1 Min.")),
+                (120, l.text("2 Min.")),
+                (300, l.text("5 Min.")),
+            ] {
                 ui.selectable_value(&mut self.draft.interval_secs, seconds, title)
-                    .on_hover_text(
+                    .on_hover_text(l.text(
                         "Bei GitHub-Limits verlängert sich das Abfrageintervall automatisch.",
-                    );
+                    ));
             }
         });
         ui.horizontal_wrapped(|ui| {
             if ui
                 .button(if self.config.paused() {
-                    "Fortsetzen"
+                    l.text("Fortsetzen")
                 } else {
-                    "30 Min. pausieren"
+                    l.text("30 Min. pausieren")
                 })
-                .on_hover_text("Desktop-Benachrichtigungen vorübergehend pausieren")
+                .on_hover_text(l.text("Desktop-Benachrichtigungen vorübergehend pausieren"))
                 .clicked()
             {
                 self.pause();
             }
             if self.config.paused() {
-                label(ui, "Pausiert", 11., p.amber);
+                label(ui, l.text("Pausiert"), 11., p.amber);
             }
         });
     }
 
     fn account_settings(&mut self, ui: &mut Ui) {
         let p = self.palette();
+        let l = self.language();
         if self.demo {
-            section(ui, "GitHub-Konto", p);
-            label(ui, "@alex · Demokonto", 14., p.text);
-            label(ui, "Die Demo verwendet keine Zugangsdaten.", 12., p.muted);
+            section(ui, l.text("GitHub-Konto"), p);
+            label(ui, l.text("@alex · Demokonto"), 14., p.text);
+            label(
+                ui,
+                l.text("Die Demo verwendet keine Zugangsdaten."),
+                12.,
+                p.muted,
+            );
             return;
         }
-        section(ui, "GitHub-Konto", p);
+        section(ui, l.text("GitHub-Konto"), p);
         if !self.config.login.is_empty() {
             label(
                 ui,
-                format!("Verbunden als @{}", self.config.login),
+                l.message(&format!("Verbunden als @{}", self.config.login)),
                 13.,
                 p.accent,
             );
@@ -209,7 +253,7 @@ impl HushApp {
         self.oauth_settings(ui);
         if !self.config.oauth {
             ui.add_space(8.);
-            egui::CollapsingHeader::new("Manuelle Tokens")
+            egui::CollapsingHeader::new(l.text("Manuelle Tokens"))
                 .default_open(!self.config.login.is_empty())
                 .show(ui, |ui| {
                     ui.add_enabled_ui(self.job.is_none() && self.oauth_login.is_none(), |ui| {
@@ -218,10 +262,10 @@ impl HushApp {
                 });
         }
         ui.add_space(8.);
-        egui::CollapsingHeader::new("Manuelle Team-Liste").show(ui, |ui| {
+        egui::CollapsingHeader::new(l.text("Manuelle Team-Liste")).show(ui, |ui| {
             label(
                 ui,
-                "Ohne read:org hier organisation/team-slug eintragen.",
+                l.text("Ohne read:org hier organisation/team-slug eintragen."),
                 12.,
                 p.muted,
             );
@@ -235,22 +279,24 @@ impl HushApp {
         if !self.config.login.is_empty() {
             ui.add_space(12.);
             ui.add_enabled_ui(self.job.is_none() && self.oauth_login.is_none(), |ui| {
-                if ui.small_button("Konto trennen …").clicked() {
+                if ui.small_button(l.text("Konto trennen …")).clicked() {
                     self.confirm_disconnect = true;
                 }
                 if self.confirm_disconnect {
                     label(
                         ui,
-                        "Konto trennen, gespeicherte Zugangsdaten und lokale Daten löschen?",
+                        l.text(
+                            "Konto trennen, gespeicherte Zugangsdaten und lokale Daten löschen?",
+                        ),
                         12.,
                         p.danger,
                     );
                     ui.horizontal_wrapped(|ui| {
-                        if ui.button("Trennen und löschen").clicked() {
+                        if ui.button(l.text("Trennen und löschen")).clicked() {
                             self.account_job(true);
                             self.confirm_disconnect = false;
                         }
-                        if ui.button("Abbrechen").clicked() {
+                        if ui.button(l.text("Abbrechen")).clicked() {
                             self.confirm_disconnect = false;
                         }
                     });
@@ -261,38 +307,39 @@ impl HushApp {
 
     fn oauth_settings(&mut self, ui: &mut Ui) {
         let p = self.palette();
+        let l = self.language();
         if let Some(login) = &self.oauth_login {
             let user_code = login.user_code.clone();
             let verification_uri = login.verification_uri.clone();
             let expires_at = login.expires_at;
             if let Some(code) = user_code {
-                label(ui, "Diesen Code auf GitHub eingeben:", 12., p.muted);
+                label(ui, l.text("Diesen Code auf GitHub eingeben:"), 12., p.muted);
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(&code).monospace().size(21.).color(p.text));
-                    if ui.button("Kopieren").clicked() {
+                    if ui.button(l.text("Kopieren")).clicked() {
                         ui.ctx().copy_text(code.clone());
                     }
                 });
                 ui.horizontal_wrapped(|ui| {
                     if let Some(uri) = &verification_uri
-                        && ui.button("GitHub öffnen ↗").clicked()
+                        && ui.button(l.text("GitHub öffnen ↗")).clicked()
                     {
                         self.open(uri);
                     }
-                    if ui.button("Abbrechen").clicked() {
+                    if ui.button(l.text("Abbrechen")).clicked() {
                         self.cancel_oauth();
                     }
                 });
                 ui.horizontal_wrapped(|ui| {
                     ui.spinner();
-                    label(ui, "Warte auf Bestätigung …", 12., p.muted);
+                    label(ui, l.text("Warte auf Bestätigung …"), 12., p.muted);
                     if let Some(expires_at) = expires_at {
                         let seconds = expires_at
                             .saturating_duration_since(Instant::now())
                             .as_secs();
                         label(
                             ui,
-                            format!("{}:{:02} Min.", seconds / 60, seconds % 60),
+                            l.message(&format!("{}:{:02} Min.", seconds / 60, seconds % 60)),
                             11.,
                             p.faint,
                         );
@@ -301,8 +348,13 @@ impl HushApp {
             } else {
                 ui.horizontal_wrapped(|ui| {
                     ui.spinner();
-                    label(ui, "GitHub-Anmeldung wird vorbereitet …", 12., p.muted);
-                    if ui.button("Abbrechen").clicked() {
+                    label(
+                        ui,
+                        l.text("GitHub-Anmeldung wird vorbereitet …"),
+                        12.,
+                        p.muted,
+                    );
+                    if ui.button(l.text("Abbrechen")).clicked() {
                         self.cancel_oauth();
                     }
                 });
@@ -317,9 +369,9 @@ impl HushApp {
                     primary(
                         ui,
                         if self.config.oauth {
-                            "Erneut anmelden"
+                            l.text("Erneut anmelden")
                         } else {
-                            "Mit GitHub anmelden"
+                            l.text("Mit GitHub anmelden")
                         },
                         p,
                     )
@@ -336,14 +388,14 @@ impl HushApp {
         if crate::oauth::client_id().is_none() {
             label(
                 ui,
-                "GitHub-Anmeldung ist in diesem Build nicht eingerichtet.",
+                l.text("GitHub-Anmeldung ist in diesem Build nicht eingerichtet."),
                 11.5,
                 p.muted,
             );
         } else {
             label(
                 ui,
-                "Für private Repositories umfasst die GitHub-Freigabe auch Schreibrechte. Hush liest ausschließlich.",
+                l.text("Für private Repositories umfasst die GitHub-Freigabe auch Schreibrechte. Hush liest ausschließlich."),
                 11.5,
                 p.muted,
             );
@@ -352,48 +404,57 @@ impl HushApp {
 
     fn manual_token_settings(&mut self, ui: &mut Ui) {
         let p = self.palette();
-        label(ui, "Benachrichtigungs-Token", 13., p.text);
+        let l = self.language();
+        label(ui, l.text("Benachrichtigungs-Token"), 13., p.text);
         ui.add(
             egui::TextEdit::singleline(&mut self.token)
                 .password(true)
                 .hint_text(if self.config.login.is_empty() {
-                    "Classic Token"
+                    l.text("Classic Token")
                 } else {
-                    "Gespeichert · leer lassen zum Behalten"
+                    l.text("Gespeichert · leer lassen zum Behalten")
                 })
                 .desired_width(f32::INFINITY)
                 .margin(vec2(8., 6.)),
         );
         label(
             ui,
-            "Classic Token: notifications, optional read:org für Teams.",
+            l.text("Classic Token: notifications, optional read:org für Teams."),
             11.5,
             p.muted,
         );
         ui.add_space(6.);
-        label(ui, "Detail-Token für private Repositories", 13., p.text);
+        label(
+            ui,
+            l.text("Detail-Token für private Repositories"),
+            13.,
+            p.text,
+        );
         ui.add(
             egui::TextEdit::singleline(&mut self.details_token)
                 .password(true)
                 .hint_text(if self.config.has_detail_token {
-                    "Gespeichert · leer lassen zum Behalten"
+                    l.text("Gespeichert · leer lassen zum Behalten")
                 } else {
-                    "Fine-grained Token"
+                    l.text("Fine-grained Token")
                 })
                 .desired_width(f32::INFINITY)
                 .margin(vec2(8., 6.)),
         );
         label(
             ui,
-            "Repos auswählen; Issues und Pull requests: Read-only. Bei Bedarf Discussions: Read-only. Eine Organisationsfreigabe kann erforderlich sein.",
+            l.text("Repos auswählen; Issues und Pull requests: Read-only. Bei Bedarf Discussions: Read-only. Eine Organisationsfreigabe kann erforderlich sein."),
             11.5,
             p.muted,
         );
         ui.horizontal_wrapped(|ui| {
-            if ui.small_button("Detail-Token erstellen ↗").clicked() {
+            if ui
+                .small_button(l.text("Detail-Token erstellen ↗"))
+                .clicked()
+            {
                 self.open("https://github.com/settings/personal-access-tokens/new");
             }
-            if ui.small_button("Token-Einstellungen ↗").clicked() {
+            if ui.small_button(l.text("Token-Einstellungen ↗")).clicked() {
                 self.open("https://github.com/settings/tokens");
             }
         });
@@ -404,9 +465,9 @@ impl HushApp {
                     !self.token.trim().is_empty()
                         || (!self.config.login.is_empty() && !self.details_token.trim().is_empty()),
                     egui::Button::new(if self.config.login.is_empty() {
-                        "Verbinden"
+                        l.text("Verbinden")
                     } else {
-                        "Tokens speichern"
+                        l.text("Tokens speichern")
                     })
                     .fill(p.hover),
                 )
@@ -414,87 +475,100 @@ impl HushApp {
             {
                 self.account_job(false);
             }
-            label(ui, "Speicherung im System-Schlüsselbund", 11., p.faint);
+            label(
+                ui,
+                l.text("Speicherung im System-Schlüsselbund"),
+                11.,
+                p.faint,
+            );
         });
     }
 
     fn diagnostics(&mut self, ui: &mut Ui) {
         let p = self.palette();
-        section(ui, "Dienst", p);
+        let l = self.language();
+        section(ui, l.text("Dienst"), p);
         if !self.demo {
             label(
                 ui,
-                format!(
+                l.message(&format!(
                     "{} · {} API-Aufrufe · {} Teams",
-                    self.status.phase, self.status.requests_last_cycle, self.status.team_count
-                ),
+                    l.message(&self.status.phase),
+                    self.status.requests_last_cycle,
+                    self.status.team_count
+                )),
                 12.,
                 p.muted,
             );
             if let Some(remaining) = self.status.remaining {
-                label(ui, format!("API-Restbudget: {remaining}"), 11., p.faint);
+                label(
+                    ui,
+                    l.message(&format!("API-Restbudget: {remaining}")),
+                    11.,
+                    p.faint,
+                );
             }
             for warning in &self.status.warnings {
-                label(ui, warning, 12., p.amber);
+                label(ui, l.message(warning), 12., p.amber);
             }
             for error in [&self.status.notification_error, &self.status.service_error]
                 .into_iter()
                 .flatten()
             {
-                label(ui, error, 12., p.danger);
+                label(ui, l.message(error), 12., p.danger);
             }
             if let Some(paths) = &self.paths {
                 label(
                     ui,
-                    format!("Protokoll: {}", paths.log_path().display()),
+                    l.message(&format!("Protokoll: {}", paths.log_path().display())),
                     11.,
                     p.faint,
                 );
             }
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Dienst starten").clicked() {
+                if ui.button(l.text("Dienst starten")).clicked() {
                     self.start_service(ui.ctx());
                 }
-                if ui.button("Dienst beenden").clicked() {
+                if ui.button(l.text("Dienst beenden")).clicked() {
                     let result = self
                         .store
                         .as_ref()
                         .map_or(Ok(()), |store| store.request_stop());
-                    self.report(result, "Hintergrunddienst wird beendet …");
+                    self.report(result, l.text("Hintergrunddienst wird beendet …"));
                 }
             });
             label(
                 ui,
                 if self.tray_available {
-                    "Tray verfügbar"
+                    l.text("Tray verfügbar")
                 } else {
-                    "Tray nicht verfügbar · Hush über den Launcher öffnen"
+                    l.text("Tray nicht verfügbar · Hush über den Launcher öffnen")
                 },
                 12.,
                 p.muted,
             );
         } else {
-            label(ui, "Demo · kein Hintergrunddienst", 12., p.muted);
+            label(ui, l.text("Demo · kein Hintergrunddienst"), 12., p.muted);
         }
-        if ui.button("Jetzt aktualisieren").clicked() {
+        if ui.button(l.text("Jetzt aktualisieren")).clicked() {
             self.refresh();
         }
-        section(ui, "Lokale Daten", p);
+        section(ui, l.text("Lokale Daten"), p);
         label(
             ui,
-            "Bis zu 500 Ereignisse / 30 Tage. Inhaltsdaten sind lokal unverschlüsselt; Tokens liegen im Schlüsselbund.",
+            l.text("Bis zu 500 Ereignisse / 30 Tage. Inhaltsdaten sind lokal unverschlüsselt; Tokens liegen im Schlüsselbund."),
             12.,
             p.muted,
         );
         if let Some(paths) = &self.paths {
             label(ui, paths.root.display().to_string(), 11., p.faint);
         }
-        if ui.button("Verlauf leeren …").clicked() {
+        if ui.button(l.text("Verlauf leeren …")).clicked() {
             self.confirm_clear = true;
         }
         if self.confirm_clear {
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Verlauf wirklich leeren").clicked() {
+                if ui.button(l.text("Verlauf wirklich leeren")).clicked() {
                     let result = self
                         .store
                         .as_ref()
@@ -504,25 +578,25 @@ impl HushApp {
                     }
                     self.report(
                         result,
-                        "Verlauf geleert. Alte Ereignisse werden nicht erneut gemeldet.",
+                        l.text("Verlauf geleert. Alte Ereignisse werden nicht erneut gemeldet."),
                     );
                     self.confirm_clear = false;
                 }
-                if ui.button("Abbrechen").clicked() {
+                if ui.button(l.text("Abbrechen")).clicked() {
                     self.confirm_clear = false;
                 }
             });
         }
-        section(ui, "Unterstützte Ereignisse", p);
+        section(ui, l.text("Unterstützte Ereignisse"), p);
         label(
             ui,
-            "Erwähnungen in Issues, Pull Requests, Reviews, Commits und Repository-Discussions benötigen Zugriff auf das jeweilige Thema. Gists, Organisations-Discussions, Projects-Boards und GitHub Enterprise sind nicht unterstützt.",
+            l.text("Erwähnungen in Issues, Pull Requests, Reviews, Commits und Repository-Discussions benötigen Zugriff auf das jeweilige Thema. Gists, Organisations-Discussions, Projects-Boards und GitHub Enterprise sind nicht unterstützt."),
             12.,
             p.muted,
         );
         label(
             ui,
-            "Der erste Import erfolgt ohne Desktop-Benachrichtigungen.",
+            l.text("Der erste Import erfolgt ohne Desktop-Benachrichtigungen."),
             12.,
             p.muted,
         );

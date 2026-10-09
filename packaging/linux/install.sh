@@ -9,6 +9,9 @@ data="${XDG_DATA_HOME:-$HOME/.local/share}"
 install -d -m 755 "$HOME/.local/bin" "$data/applications" "$data/icons/hicolor/scalable/apps"
 install -m 755 "$binary" "$bin"
 install -m 644 "$root/assets/io.hush.github.svg" "$data/icons/hicolor/scalable/apps/io.hush.github.svg"
+install -Dm644 "$root/LICENSE" "$data/licenses/hush/LICENSE"
+install -Dm644 "$root/assets/fonts/OFL.txt" "$data/licenses/hush/fonts/OFL.txt"
+install -Dm644 "$root/assets/fonts/README.md" "$data/licenses/hush/fonts/README.md"
 # Escape the Desktop Entry Exec value without evaluating it as a shell command.
 escaped="${bin//\\/\\\\}"; escaped="${escaped//\"/\\\"}"; escaped="${escaped//%/%%}"
 cat > "$data/applications/io.hush.github.desktop" <<DESKTOP

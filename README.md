@@ -3,7 +3,7 @@
 GitHub notifications for the desktop.
 
 A desktop application built with **Rust + egui/eframe**, with a narrow GitHub
-inbox, four event types, and light or dark themes.
+inbox, four event types, seven interface languages, and light or dark themes.
 
 **Release versions from Git tags · MIT**
 
@@ -44,8 +44,8 @@ comment again does not produce another banner.
 The window starts at **440 × 640 pixels** and can shrink to **360 × 480**. The
 inbox shows the **20 newest entries**, including read notifications. Beside
 search, **Filter** opens the menu for optional unread-only filtering
-(`"Ungelesen"`), all or individual event types, and marking everything as read
-(`"Alle als gelesen markieren"`). Unread-only filtering is off by default.
+(**Unread**), all or individual event types, and marking everything as read.
+Unread-only filtering is off by default.
 Search and filters show at most the 20 newest matching entries.
 
 Each entry has an icon for its action: a new issue, a PR assignment or review
@@ -58,13 +58,28 @@ fails, an unread entry stays unread and a notice appears. Only
 
 The gear at the top right opens settings with notifications, account, and
 diagnostics tabs. `Ctrl+K` / `Cmd+K` switches to search; `Esc` closes the filter
-menu or returns from settings to the inbox. The application interface is German.
+menu or returns from settings to the inbox.
+
+Hush supports **German, English, Spanish, French, Brazilian Portuguese,
+Simplified Chinese, and Japanese**. It follows the system language by default,
+with English as the fallback for other languages. The language selector in
+settings lets you choose a language or return to the system default. Language
+and light/dark theme changes apply and save immediately, including across
+restarts; other settings use the **Save** button. Tray menus, application notices,
+and desktop notification text follow the selected language. GitHub titles,
+comments, repository names, account names, and your own input are not translated.
 
 The main settings cover the four rules, issue repositories, system notifications,
 private content previews, and a polling interval of 1/2/5 minutes. Pausing holds
 back desktop notifications for 30 minutes while events continue to appear in the
 inbox. There is no burst of delayed banners when the pause ends. The light/dark
-selection applies to the current window session.
+theme can be switched with the icon in the settings header.
+
+Chinese and Japanese font subsets are bundled for offline rendering, including
+common Han characters and kana. No font download or system font installation is
+needed. Rare ideographs outside the included ranges may not render. See the
+[font documentation](assets/fonts/README.md) for coverage, attribution, and the
+separate SIL Open Font License.
 
 The initial sync imports at most the last 24 hours **without banners**. Stored
 history is limited to 500 entries or 30 days; the list displays the 20 newest
@@ -359,6 +374,8 @@ See [SECURITY.md](docs/SECURITY.md) for further security boundaries.
 
 ```text
 src/ui/          Native egui UI, design system, vector icons, offline demo
+src/i18n.rs      Language selection, message lookup, and safe interpolation
+src/locales/     Embedded translation catalogs for seven languages
 src/api.rs       Bounded GitHub transport for repository read operations
 src/oauth.rs     Browser device authorization and token refresh
 src/filter.rs    Concrete event detection instead of sticky notification reasons
@@ -366,6 +383,7 @@ src/engine.rs    Background process, scheduling, retries, delivery
 src/storage.rs   Private SQLite database, IDs, cursors, tasks, outbox
 src/secrets.rs   Operating-system keychain; no plaintext fallback
 src/notify.rs    Native banners, private by default
+assets/fonts/    Bundled CJK font subsets and their SIL Open Font License
 preview/         Historical HTML prototype
 scripts/         Rendering of exported native egui interfaces
 packaging/       Per-user installation and optional autostart

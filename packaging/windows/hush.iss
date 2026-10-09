@@ -43,6 +43,8 @@ Name: "desktopicon"; Description: "Desktop-Verknüpfung erstellen"; Flags: unche
 Source: "{#SourceRoot}\target\release\hush.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\assets\hush.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\assets\fonts\OFL.txt"; DestDir: "{app}\licenses\fonts"; Flags: ignoreversion
+Source: "{#SourceRoot}\assets\fonts\README.md"; DestDir: "{app}\licenses\fonts"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\Hush"; Filename: "{app}\hush.exe"; IconFilename: "{app}\hush.ico"; AppUserModelID: "io.hush.github"

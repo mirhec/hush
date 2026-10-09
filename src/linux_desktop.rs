@@ -199,6 +199,7 @@ pub fn run(paths: Paths, start_in_tray: bool) -> Result<()> {
         let config = store.config()?;
         let runtime = store.status()?;
         tray.update(State {
+            language: config.language.resolved(),
             running: engine::is_running(&paths)? && runtime.alive(),
             paused: config.paused(),
             unread: store.events()?.iter().filter(|e| e.unread).count(),
