@@ -56,6 +56,28 @@ Banner contents are private by default. Titles, repository names, and actors are
 
 Clearing history logically deletes visible events but retains IDs and cursors to prevent duplicates. Disconnecting the account also deletes tasks and cursors. Neither operation securely overwrites SQLite WAL files, free database pages, backups, or OS notification history. For highly confidential data, use disk encryption and an appropriate deletion and backup policy.
 
+## Startup registration
+
+Autostart is disabled for a fresh installation and requires an explicit action
+in settings (or an explicitly invoked optional installation helper). Windows,
+macOS, and native Linux register only the current user's application, with no
+administrator request, system service, shell command, token, or GitHub content
+in the startup command. The registration launches Hush with `--tray` at the next
+desktop login and remains independent of account disconnection.
+
+Flatpak uses the desktop Background portal for both enabling and disabling
+startup. Hush does not grant itself background permission, modify host startup
+files, or obtain broad filesystem/session-bus access. A portal refusal or failure
+is surfaced to the user. The portal cannot report existing autostart settings;
+the UI therefore does not claim an unverified enabled/disabled state. Operating
+system policy or another startup manager may still block a registered app.
+
+Before removing a native macOS/Linux installation manually, disable **Start at
+login** in Hush to prevent future starts. Native Linux retains a disabled user
+override so a system-wide entry cannot enable startup again. The Windows release uninstaller
+removes the Run entry even if it was enabled later from the application. Existing
+manual Niri startup lines are outside this control and must be removed manually.
+
 ## Integrity and supply chain
 
 Hush itself runs as the logged-in user. The Windows installer and Linux Flatpak installation are scoped to that user; the macOS package installs `/Applications/Hush.app` and may require administrator authorization. Packaging scripts install application files and platform launcher entries, with autostart enabled only on explicit request. Review the scripts before running them. Native Windows COM/AppID behavior and macOS signing and installation still require validation on the target systems.

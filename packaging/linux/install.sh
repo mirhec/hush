@@ -3,7 +3,7 @@
 set -euo pipefail
 root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 binary="${1:-$root/target/release/hush}"
-[[ -f "$binary" ]] || { printf 'Binary fehlt: %s\nZuerst cargo build --release ausführen.\n' "$binary" >&2; exit 1; }
+[[ -f "$binary" ]] || { printf 'Binary missing: %s\nRun cargo build --release first.\n' "$binary" >&2; exit 1; }
 bin="$HOME/.local/bin/hush"
 data="${XDG_DATA_HOME:-$HOME/.local/share}"
 install -d -m 755 "$HOME/.local/bin" "$data/applications" "$data/icons/hicolor/scalable/apps"
@@ -19,7 +19,7 @@ cat > "$data/applications/io.hush.github.desktop" <<DESKTOP
 Type=Application
 Name=Hush
 GenericName=GitHub Inbox
-Comment=GitHub-Benachrichtigungen
+Comment=GitHub notifications
 Exec="$escaped"
 Icon=io.hush.github
 Terminal=false
@@ -29,4 +29,4 @@ StartupWMClass=io.hush.github
 DESKTOP
 chmod 644 "$data/applications/io.hush.github.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$data/applications" || true
-printf 'Installiert: %s\nIm Launcher als Hush verfügbar. Autostart ist nicht aktiviert.\n' "$bin"
+printf 'Installed: %s\nAvailable as Hush in the app launcher. Choose Start at login in Hush settings; this script leaves existing startup settings unchanged.\n' "$bin"

@@ -18,6 +18,38 @@ All SQLite transactions that will write begin with `BEGIN IMMEDIATE`. Previously
 
 Preparing an existing database does not open and close an additional file descriptor. On POSIX, closing it would release the SQLite locks held by all threads in that process. When the heartbeat connection opened, this could let another process remove the still-active WAL file, leaving the worker and UI with separate states. The database is opened outside SQLite only when it is first created; existing files are checked through metadata and assigned private permissions. Background: [SQLite, POSIX advisory locks](https://www.sqlite.org/howtocorrupt.html#_posix_advisory_locks_canceled_by_a_separate_thread_doing_close_).
 
+## Start at login
+
+The settings control calls the autostart backend on a worker thread. Startup
+registration is independent of account configuration and is changed immediately;
+unsaved rules and notification preferences remain drafts. Native operating
+system registrations are authoritative rather than a duplicate SQLite boolean.
+All registrations launch the current executable with `--tray` at the next login.
+Disabling registration leaves the current Hush session running.
+
+Windows uses `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value
+`Hush`. macOS uses `~/Library/LaunchAgents/io.hush.github.agent.plist`. The macOS
+backend updates the file without unloading the current LaunchAgent, since doing
+so could terminate Hush while it is changing its own preference. Native Linux
+uses an XDG autostart desktop entry under the user's configuration directory.
+Niri's systemd session integration starts `xdg-desktop-autostart.target`; a bare
+compositor session requires a separate runner. Hush does not edit compositor
+configuration or system-wide startup services.
+
+Inside Flatpak, Hush requests `org.freedesktop.portal.Background.RequestBackground`
+through the session bus with a localized reason and `hush --tray` as its command
+line. The desktop handles permission prompts and persistence. The Background
+portal has no API for reading the saved autostart preference, so the UI presents
+explicit enable/disable actions instead of an invented on/off state. Request
+results determine feedback; cancellation, denial, and transport errors are not
+reported as success. No host filesystem grant is needed.
+
+Windows upgrades keep the existing Run registration enabled or absent and
+refresh an enabled entry's executable path. The uninstaller removes Hush's Run
+value, including a value enabled from settings after installation. Existing
+manual Niri startup lines remain the user's responsibility; mixing them with
+managed registration can cause additional launch attempts despite process locks.
+
 ## Authentication
 
 The default login uses GitHub's OAuth device flow. Hush requests a device code, opens GitHub's verification page in the system browser, and shows the short code for the user to enter. It polls for authorization with GitHub's required interval and handles cancellation, expiration, and slower polling requests. This flow needs a registered OAuth app with device flow enabled and its public client ID; it does not require a client secret or a Hush server.

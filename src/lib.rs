@@ -9,6 +9,8 @@ pub mod oauth;
 pub mod secrets;
 pub mod storage;
 #[cfg(feature = "desktop")]
+pub mod autostart;
+#[cfg(feature = "desktop")]
 pub mod ui;
 
 #[cfg(all(feature = "desktop", target_os = "linux"))]

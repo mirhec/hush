@@ -107,6 +107,27 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertEqual(output.read_text(), "HUSH_VERSION=1.0.2-rc.1\nHUSH_NUMERIC_VERSION=1.0.2\n")
         self.assertEqual(version.versions(root), ("1.0.2-rc.1", "1.0.2"))
 
+    def test_windows_installer_preserves_autostart_and_removes_it_only_on_uninstall(self):
+        installer = (ROOT / "packaging/windows/hush.iss").read_text()
+        registry = installer.split("[Registry]", 1)[1].split("[Run]", 1)[0]
+        entries = [line for line in registry.splitlines()
+                   if line.startswith("Root:") and 'ValueName: "Hush";' in line]
+        self.assertEqual(len(entries), 2)
+        cleanup = next(line for line in entries if "ValueType: none;" in line)
+        update = next(line for line in entries if "ValueType: string;" in line)
+        # A fresh install must neither create nor reset the user's startup value.
+        self.assertIn("dontcreatekey", cleanup)
+        self.assertIn("uninsdeletevalue", cleanup)
+        for entry in entries:
+            flags = entry.split("Flags:", 1)[1].split(";", 1)[0].split()
+            self.assertNotIn("deletevalue", flags)
+            self.assertNotIn("deletekey", flags)
+        self.assertIn("Check: RegValueExists(HKCU,", update)
+        self.assertIn("'Hush')", update)
+        self.assertIn('""{app}\\hush.exe"" --tray', update)
+        self.assertNotIn("Tasks: autostart", update)
+        self.assertNotIn('Name: "autostart";', installer)
+
     def test_flatpak_stages_only_build_inputs_and_uses_filtered_desktop_access(self):
         spec = importlib.util.spec_from_file_location("flatpak_prepare", ROOT / "packaging/flatpak/prepare.py")
         prepare = importlib.util.module_from_spec(spec)

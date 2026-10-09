@@ -42,6 +42,23 @@ fn export_native_ui_frames() {
         ("settings", 440., 640., Page::Settings, false, false),
         ("inbox-small", 360., 480., Page::Inbox, false, false),
         ("settings-small", 360., 480., Page::Settings, false, false),
+        ("en-autostart", 360., 480., Page::Settings, false, false),
+        (
+            "de-autostart-portal",
+            360.,
+            480.,
+            Page::Settings,
+            false,
+            false,
+        ),
+        (
+            "ja-autostart-portal",
+            360.,
+            480.,
+            Page::Settings,
+            false,
+            false,
+        ),
         ("inbox-light", 440., 640., Page::Inbox, false, true),
         ("account", 440., 640., Page::Settings, false, false),
         ("account-oauth", 360., 480., Page::Settings, false, false),
@@ -116,6 +133,19 @@ fn export_native_ui_frames() {
                 user_code: Some("TEST-CODE".into()),
                 verification_uri: Some("https://github.com/login/device".into()),
                 expires_at: Some(Instant::now() + Duration::from_secs(900)),
+            });
+        }
+        let autostart_demo = tempfile::tempdir().unwrap();
+        if name.contains("autostart") {
+            app.demo = false;
+            app.paths = Some(Paths::at(autostart_demo.path().join("data")).unwrap());
+            app.running = true;
+            app.status.heartbeat = Utc::now().timestamp();
+            app.autostart_checked = true;
+            let portal = name.ends_with("portal");
+            app.autostart_status = Some(autostart::Status {
+                enabled: if portal { None } else { Some(true) },
+                portal,
             });
         }
         if name == "diagnostics" {

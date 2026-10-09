@@ -1,3 +1,6 @@
+// Manual alternative for sessions without an XDG autostart runner.
+// Prefer Start at login in Hush settings with niri-session/systemd.
+// Use only one method; remove this line before switching to Hush settings.
 // Optional: add to ~/.config/niri/config.kdl.
 // Adjust the absolute path. Niri does not expand ~ or $HOME through Bash here.
 spawn-at-startup "/home/YOUR-USERNAME/.local/bin/hush" "--tray"

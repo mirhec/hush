@@ -26,6 +26,14 @@ Settings are split across three tabs: notifications, account, and diagnostics. E
 
 A language selector sits above the settings tabs and lists each language by its native name. The default follows the system language and falls back to English for unsupported languages. Language and theme changes apply immediately and persist across restarts without saving unrelated settings. Tab and action rows can wrap at narrow widths; descriptions stay in tooltips to preserve the compact layout. Tray text, application notices, and desktop notification labels use the chosen language. GitHub content and user input remain in their original language.
 
+Start at login sits below language selection so it remains easy to find in a
+small window. Native installations show the actual registration as a toggle.
+Flatpak offers explicit enable/disable actions through the system dialog because
+its portal cannot read back the persisted preference. Registration changes run
+asynchronously, show pending feedback, and apply independently of Save. Errors
+leave the last known state intact and provide a retry action. The demo changes
+only its preview state and never registers startup on the host.
+
 The account tab offers browser-based GitHub sign-in. It shows the short device code and provides the verification link, with cancellation while authorization is pending. A brief explanation describes the repository permissions before login. Manual personal access tokens remain under the advanced options, alongside the team list. Sensitive inputs use password fields and are not serialized into GUI persistence. Diagnostics contains service controls and local data actions. System banners omit confidential repository and content details by default. Feedback appears as a toast for four seconds, or ten seconds for errors.
 
 The [OAuth confirmation screen](screenshots/oauth-account.png) shows the browser sign-in flow with a synthetic device code.
@@ -33,6 +41,10 @@ The [OAuth confirmation screen](screenshots/oauth-account.png) shows the browser
 The [English inbox](screenshots/inbox-english.png), [Japanese settings](screenshots/settings-japanese.png), and [Chinese sign-in screen](screenshots/account-chinese.png) demonstrate translated layouts at 360 × 480 pixels.
 
 ## Checking the layout
+
+The [native autostart control](screenshots/settings-autostart.png) and
+[Flatpak portal actions](screenshots/settings-autostart-flatpak.png) show the
+two startup variants at 360 × 480 pixels.
 
 The [inbox](screenshots/compact-inbox.png), [filter menu](screenshots/inbox-filters.png), [GitHub hover action at 360 pixels](screenshots/inbox-hover-small.png), [mark-as-unread action](screenshots/inbox-mark-unread.png), and [small settings window](screenshots/compact-settings-small.png) images show actual egui drawing data with demo content. They were rendered without a desktop session from egui triangles and the corresponding font atlas. They demonstrate the layout, not native operating system interaction.
 

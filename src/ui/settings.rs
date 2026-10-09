@@ -33,6 +33,8 @@ impl HushApp {
             }
         });
         ui.add_space(4.);
+        self.startup_settings(ui);
+        ui.add_space(4.);
         ui.horizontal_wrapped(|ui| {
             for (tab, title) in [
                 (SettingsTab::Notifications, l.text("Benachrichtigungen")),
@@ -90,6 +92,100 @@ impl HushApp {
                 }
             }
         });
+    }
+
+    fn startup_settings(&mut self, ui: &mut Ui) {
+        if !self.autostart_checked {
+            self.autostart_checked = true;
+            self.start_autostart_job(None, ui.ctx());
+        }
+        let p = self.palette();
+        let l = self.language();
+        let pending = self.autostart_job.is_some();
+        let editable = !self.demo && self.paths.is_some() && !pending && !self.quitting;
+        let portal = self.autostart_status.is_some_and(|status| status.portal);
+        if portal {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    RichText::new(l.text("Beim Anmelden starten"))
+                        .size(12.)
+                        .color(p.text),
+                )
+                .on_hover_text(
+                    l.text("Startet Hush im Hintergrund, sobald du dich am Computer anmeldest."),
+                );
+                ui.label(
+                    RichText::new(l.text("Systemdialog"))
+                        .size(11.)
+                        .color(p.faint),
+                )
+                .on_hover_text(
+                    l.text("Der Autostart wird vom System verwaltet. Änderungen gelten sofort."),
+                );
+            });
+            ui.horizontal_wrapped(|ui| {
+                for (enabled, title) in [
+                    (true, "Autostart aktivieren"),
+                    (false, "Autostart deaktivieren"),
+                ] {
+                    if ui
+                        .add_enabled(editable, egui::Button::new(l.text(title)))
+                        .clicked()
+                    {
+                        self.start_autostart_job(Some(enabled), ui.ctx());
+                    }
+                }
+            });
+        } else if let Some(mut enabled) = self.autostart_status.and_then(|status| status.enabled) {
+            ui.add_enabled_ui(editable, |ui| {
+                if setting_toggle(
+                    ui,
+                    l.text("Beim Anmelden starten"),
+                    l.text("Startet Hush im Hintergrund, sobald du dich am Computer anmeldest."),
+                    &mut enabled,
+                    p,
+                    None,
+                )
+                .inner
+                .changed()
+                {
+                    self.start_autostart_job(Some(enabled), ui.ctx());
+                }
+            });
+        } else {
+            label(ui, l.text("Beim Anmelden starten"), 12., p.text);
+        }
+        if let Some(job) = &self.autostart_job {
+            ui.horizontal_wrapped(|ui| {
+                ui.spinner();
+                label(
+                    ui,
+                    l.text(if job.requested.is_some() {
+                        "Autostart wird geändert …"
+                    } else {
+                        "Autostart wird geprüft …"
+                    }),
+                    11.,
+                    p.muted,
+                );
+            });
+        }
+        if let Some(error) = self.autostart_error.clone() {
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add_enabled(!pending, egui::Button::new(l.text("Erneut prüfen")))
+                    .clicked()
+                {
+                    self.start_autostart_job(None, ui.ctx());
+                }
+                ui.label(
+                    RichText::new(l.text("Autostart: Fehler"))
+                        .size(11.)
+                        .color(p.danger),
+                )
+                .on_hover_text(l.message(&error));
+            });
+        }
     }
 
     fn notification_settings(&mut self, ui: &mut Ui) {

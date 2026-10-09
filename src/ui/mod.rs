@@ -9,7 +9,7 @@ mod theme;
 mod toast;
 
 use crate::{
-    engine,
+    autostart, engine,
     filter::safe_web_url,
     i18n::Language,
     model::{Config, Event, Kind, Repo, RuntimeStatus},
@@ -66,6 +66,45 @@ struct OAuthLogin {
     expires_at: Option<Instant>,
 }
 
+#[derive(Clone, Copy)]
+struct AutostartBackend {
+    status: fn() -> anyhow::Result<autostart::Status>,
+    set_enabled: fn(bool, &str) -> anyhow::Result<autostart::Status>,
+}
+
+impl Default for AutostartBackend {
+    fn default() -> Self {
+        #[cfg(not(test))]
+        {
+            Self {
+                status: autostart::status,
+                set_enabled: autostart::set_enabled,
+            }
+        }
+        // UI tests and captures never read or modify the user's login settings.
+        #[cfg(test)]
+        Self {
+            status: || {
+                Ok(autostart::Status {
+                    enabled: Some(false),
+                    portal: false,
+                })
+            },
+            set_enabled: |enabled, _| {
+                Ok(autostart::Status {
+                    enabled: Some(enabled),
+                    portal: false,
+                })
+            },
+        }
+    }
+}
+
+struct AutostartJob {
+    requested: Option<bool>,
+    result: Receiver<Result<autostart::Status, String>>,
+}
+
 pub struct HushApp {
     paths: Option<Paths>,
     store: Option<Store>,
@@ -88,6 +127,11 @@ pub struct HushApp {
     message: Option<Toast>,
     job: Option<Receiver<Result<Config, String>>>,
     oauth_login: Option<OAuthLogin>,
+    autostart_backend: AutostartBackend,
+    autostart_status: Option<autostart::Status>,
+    autostart_error: Option<String>,
+    autostart_checked: bool,
+    autostart_job: Option<AutostartJob>,
     last_poll: Instant,
     confirm_disconnect: bool,
     confirm_clear: bool,
@@ -153,6 +197,14 @@ impl HushApp {
             message: None,
             job: None,
             oauth_login: None,
+            autostart_backend: AutostartBackend::default(),
+            autostart_status: demo.then_some(autostart::Status {
+                enabled: Some(false),
+                portal: false,
+            }),
+            autostart_error: None,
+            autostart_checked: false,
+            autostart_job: None,
             last_poll: Instant::now() - Duration::from_secs(2),
             confirm_disconnect: false,
             confirm_clear: false,
@@ -228,6 +280,72 @@ impl HushApp {
             Err(e) => Toast::new(format!("{e:#}"), true),
         });
     }
+    fn start_autostart_job(&mut self, requested: Option<bool>, ctx: &egui::Context) {
+        if self.demo || self.paths.is_none() || self.autostart_job.is_some() || self.quitting {
+            return;
+        }
+        self.autostart_checked = true;
+        self.autostart_error = None;
+        let backend = self.autostart_backend;
+        let reason = self
+            .language()
+            .text("Hush soll nach der Anmeldung im Hintergrund Benachrichtigungen empfangen.")
+            .to_owned();
+        let (send, receive) = mpsc::channel();
+        self.autostart_job = Some(AutostartJob {
+            requested,
+            result: receive,
+        });
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let result = match requested {
+                Some(enabled) => (backend.set_enabled)(enabled, &reason),
+                None => (backend.status)(),
+            };
+            let _ = send.send(result.map_err(|error| format!("{error:#}")));
+            ctx.request_repaint();
+        });
+    }
+    fn poll_autostart(&mut self) {
+        let Some(job) = &self.autostart_job else {
+            return;
+        };
+        let result = match job.result.try_recv() {
+            Ok(result) => result,
+            Err(mpsc::TryRecvError::Empty) => return,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                Err("Die Autostart-Aktion wurde abgebrochen. Bitte erneut versuchen.".into())
+            }
+        };
+        let requested = job.requested;
+        self.autostart_job = None;
+        match result {
+            Ok(status) => {
+                self.autostart_status = Some(status);
+                self.autostart_error = None;
+                if let Some(enabled) = requested {
+                    let confirmed = status.enabled == Some(enabled);
+                    let text = if !confirmed {
+                        "Autostart wurde nicht geändert."
+                    } else if enabled {
+                        "Autostart aktiviert."
+                    } else {
+                        "Autostart deaktiviert."
+                    };
+                    if !confirmed {
+                        self.autostart_error = Some(text.into());
+                    }
+                    self.message = Some(Toast::new(text.into(), !confirmed));
+                }
+            }
+            Err(error) => {
+                self.autostart_error = Some(error.clone());
+                if requested.is_some() {
+                    self.message = Some(Toast::new(error, true));
+                }
+            }
+        }
+    }
     fn start_service(&mut self, ctx: &egui::Context) {
         if self.service_job.is_some() || self.demo || self.quitting {
             return;
@@ -259,6 +377,7 @@ impl HushApp {
     }
     fn poll(&mut self, ctx: &egui::Context) {
         self.poll_oauth();
+        self.poll_autostart();
         if let Some(rx) = &self.service_job {
             match rx.try_recv() {
                 Ok(result) => {
@@ -1009,6 +1128,7 @@ impl eframe::App for HushApp {
         if self.page == Page::Settings {
             self.settings(&mut ui);
         } else {
+            self.autostart_checked = false;
             self.inbox(&mut ui);
         }
         let language = self.language();
