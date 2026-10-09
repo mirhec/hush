@@ -36,8 +36,7 @@ Name: "german"; MessagesFile: "compiler:Languages\German.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "autostart"; Description: "Hush bei der Anmeldung im Tray starten"; Flags: unchecked
-Name: "desktopicon"; Description: "Desktop-Verknüpfung erstellen"; Flags: unchecked
+Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Files]
 Source: "{#SourceRoot}\target\release\hush.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -51,13 +50,15 @@ Name: "{userprograms}\Hush"; Filename: "{app}\hush.exe"; IconFilename: "{app}\hu
 Name: "{userdesktop}\Hush"; Filename: "{app}\hush.exe"; IconFilename: "{app}\hush.ico"; AppUserModelID: "io.hush.github"; Tasks: desktopicon
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Hush"; Flags: deletevalue
+; Register uninstall cleanup even when autostart is enabled later from Hush.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Hush"; Flags: dontcreatekey uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\io.hush.github"; ValueType: string; ValueName: "DisplayName"; ValueData: "Hush"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\AppUserModelId\io.hush.github"; ValueType: string; ValueName: "IconUri"; ValueData: "{app}\hush.ico"
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Hush"; ValueData: """{app}\hush.exe"" --tray"; Tasks: autostart; Flags: uninsdeletevalue
+; Preserve the current opt-in across upgrades and refresh its executable path.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Hush"; ValueData: """{app}\hush.exe"" --tray"; Check: RegValueExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Hush'); Flags: uninsdeletevalue
 
 [Run]
-Filename: "{app}\hush.exe"; Description: "Hush starten"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\hush.exe"; Description: "Launch Hush"; Flags: nowait postinstall skipifsilent
 
 ; Application data and keyring entries are retained. Disconnect the account
 ; inside Hush before uninstalling if those should also be removed.

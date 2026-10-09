@@ -95,6 +95,34 @@ matches. Older deduplication IDs are retained for up to 90 days.
 Multiple computers have independent inboxes and may show separate banners for
 the same event. Entries archived in older versions remain in history as read.
 
+### Start at login
+
+Enable **Start at login** at the top of settings to receive notifications after
+signing in to your computer. It is off by default, applies immediately without
+saving other settings, and starts Hush with `--tray` at the next login. If no tray
+is available, Hush opens its window so it remains accessible. Disabling autostart
+does not stop the current session; use **Quit Hush** in the tray for that.
+
+| Installation | Registration |
+|---|---|
+| Windows | Current user's `Run` registry entry; no administrator rights |
+| macOS | User LaunchAgent in `~/Library/LaunchAgents` |
+| Native Linux | Desktop entry in `$XDG_CONFIG_HOME/autostart` (normally `~/.config/autostart`) |
+| Flatpak | Desktop background portal, with an explicit system permission request |
+
+Flatpak shows separate enable/disable actions because the portal cannot report
+the existing autostart preference. Hush displays the result of each request and
+does not guess that an unknown setting is disabled. A working Background portal
+backend is required; cancellation, refusal, or an unavailable backend produces a
+notice. Hush does not request host-filesystem access to bypass the portal.
+
+Native Linux requires a session that runs XDG autostart entries. This includes
+Niri when started through `niri-session` with systemd integration. A bare Niri
+session needs an XDG autostart runner or the manual configuration below. Remove
+old manual startup entries before using the settings control to avoid competing
+registrations. If a native executable is moved, disable and re-enable autostart
+from its new location. Signing out of GitHub leaves the startup preference intact.
+
 ## Connecting GitHub
 
 Hush supports **github.com** and one GitHub account per operating-system user
@@ -240,8 +268,10 @@ Installation is per user in `~/.local/bin` and `~/.local/share`, without root
 permissions. Start Hush from the app launcher or `~/.local/bin/hush`. The script
 does not configure autostart.
 
-For an **explicitly chosen** Niri autostart, adapt `packaging/linux/niri.kdl` to
-your username. Do not blindly overwrite an existing Niri configuration.
+For a Niri session without an XDG autostart runner, `packaging/linux/niri.kdl`
+provides a manual alternative. Adapt its absolute path and use only one startup
+method. The settings control does not edit your Niri configuration or remove
+manual entries. Do not overwrite an existing Niri configuration.
 `packaging/linux/dms-status.sh` is an optional JSON helper for a custom panel
 widget, **not a ready-to-install DMS plugin**; it requires `jq` and publishes no
 titles, repository names, or tokens.
@@ -268,9 +298,9 @@ integration separately on the target macOS version. Do not disable Gatekeeper
 or other system-wide protections.
 
 Apple Silicon and Intel are built separately in the workflow, not as a universal
-binary. After copying to `/Applications`, optional explicit autostart can be
-configured with `bash packaging/macos/enable-autostart.sh`. It installs a user
-LaunchAgent, not a system service.
+binary. After copying to `/Applications`, enable **Start at login** in settings.
+`bash packaging/macos/enable-autostart.sh` is an optional command-line alternative
+that uses the same user LaunchAgent. Both take effect at the next login.
 
 ### Windows
 
@@ -287,8 +317,10 @@ need administrator permissions or impersonate another application's identity.
 If a PowerShell policy blocks the local script, inspect the script and its
 source first; do not bypass organization-wide security policy.
 
-Autostart is off by default and enabled only with the explicit `-AutoStart`
-parameter. The release executable does not open a separate console window. CLI
+Autostart is off by default. Enable it in Hush settings, or pass the explicit
+`-AutoStart` parameter to the local installation script. Updates preserve the
+existing choice; the release uninstaller removes the startup registration. The
+release executable does not open a separate console window. CLI
 output redirection/`--status` on Windows has not been tested; the status helper
 is primarily intended for Linux.
 
@@ -352,7 +384,8 @@ heartbeat. Concurrent SQLite writes from UI, worker, and heartbeat are serialize
 before reading so they do not fail during a lock upgrade. File preparation also
 preserves existing SQLite locks so the service and UI see the same data.
 
-Logging out/restarting ends the processes; autostart requires explicit setup.
+Logging out/restarting ends the processes; enabling **Start at login** starts
+Hush again at the next desktop login.
 System banners still have no click action.
 
 Delivery uses **polling, not server-side push**. The default is every two minutes,
@@ -390,6 +423,7 @@ src/api.rs       Bounded GitHub transport for repository read operations
 src/oauth.rs     Browser device authorization and token refresh
 src/filter.rs    Concrete event detection instead of sticky notification reasons
 src/engine.rs    Background process, scheduling, retries, delivery
+src/autostart.rs Per-user startup registration and Flatpak Background portal
 src/storage.rs   Private SQLite database, IDs, cursors, tasks, outbox
 src/secrets.rs   Operating-system keychain; no plaintext fallback
 src/notify.rs    Native banners, private by default

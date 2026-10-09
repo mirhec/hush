@@ -2,7 +2,7 @@
 # Run in PowerShell after building; no admin rights or machine-wide policy changes.
 param([string]$Binary = "$PSScriptRoot\..\..\target\release\hush.exe",[switch]$AutoStart)
 $ErrorActionPreference = 'Stop'
-if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw "Binary fehlt: $Binary. Zuerst cargo build --release ausführen." }
+if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw "Binary missing: $Binary. Run cargo build --release first." }
 $Root = (Resolve-Path "$PSScriptRoot\..\..").Path
 $Destination = Join-Path $env:LOCALAPPDATA 'Programs\Hush'
 New-Item -ItemType Directory -Path $Destination -Force | Out-Null
@@ -57,7 +57,7 @@ public static class HushShortcut {
   object link=new ShellLink(); IntPtr value=IntPtr.Zero;
   try {
    IShellLinkW s=(IShellLinkW)link; s.SetPath(exe);s.SetWorkingDirectory(System.IO.Path.GetDirectoryName(exe));
-   s.SetDescription("Hush – GitHub-Benachrichtigungen");s.SetIconLocation(icon,0);
+   s.SetDescription("Hush – GitHub notifications");s.SetIconLocation(icon,0);
    PropertyKey key=new PropertyKey{fmtid=new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"),pid=5};
    value=Marshal.StringToCoTaskMemUni(appId);PropVariant variant=new PropVariant{type=31,value=value};
    IPropertyStore store=(IPropertyStore)link;Marshal.ThrowExceptionForHR(store.SetValue(ref key,ref variant));Marshal.ThrowExceptionForHR(store.Commit());
@@ -73,6 +73,7 @@ if ($AutoStart) {
  New-Item -Path $RunKey -Force | Out-Null
  New-ItemProperty -Path $RunKey -Name 'Hush' -Value ('"' + $Executable + '" --tray') -PropertyType String -Force | Out-Null
 }
-Write-Host "Hush installiert: $Executable"
-Write-Host 'Über das Startmenü öffnen. Benachrichtigungen unter Windows-Einstellungen > System > Benachrichtigungen zulassen.'
-Write-Host 'Autostart wird nur mit -AutoStart eingerichtet. Zum Deinstallieren die Installation, Hush.lnk und die genannten HKCU-Einträge entfernen; Tokens vorher in Hush löschen.'
+Write-Host "Hush installed: $Executable"
+Write-Host 'Open Hush from the Start menu. Allow notifications in Windows Settings > System > Notifications.'
+Write-Host 'Choose Start at login in Hush settings. -AutoStart also enables it explicitly; otherwise this script preserves the existing choice.'
+Write-Host 'To uninstall, disable Start at login, disconnect the account if needed, and remove the installation, Hush.lnk, and the Hush AppUserModelID registry entry.'

@@ -55,6 +55,260 @@ fn demo_app(ctx: &egui::Context) -> HushApp {
     app
 }
 
+fn finish_autostart_job(app: &mut HushApp) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while app.autostart_job.is_some() {
+        app.poll_autostart();
+        assert!(Instant::now() < deadline, "Autostart worker did not finish");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn autostart_only_changes_after_explicit_toggle_and_keeps_settings_drafts() {
+    use std::sync::atomic::AtomicUsize;
+    static READS: AtomicUsize = AtomicUsize::new(0);
+    static WRITES: AtomicUsize = AtomicUsize::new(0);
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = Paths::at(temporary.path().join("data")).unwrap();
+    let mut store = Store::open(&paths).unwrap();
+    store.save_config(&app.config).unwrap();
+    app.store = Some(store);
+    app.paths = Some(paths.clone());
+    app.autostart_backend = AutostartBackend {
+        status: || {
+            READS.fetch_add(1, Ordering::SeqCst);
+            Ok(autostart::Status {
+                enabled: Some(false),
+                portal: false,
+            })
+        },
+        set_enabled: |enabled, reason| {
+            assert!(reason.contains("Hush"));
+            WRITES.fetch_add(1, Ordering::SeqCst);
+            Ok(autostart::Status {
+                enabled: Some(enabled),
+                portal: false,
+            })
+        },
+    };
+    app.start_autostart_job(Some(true), &ctx);
+    assert!(
+        app.autostart_job.is_none(),
+        "Demo never changes login settings"
+    );
+    assert_eq!(WRITES.load(Ordering::SeqCst), 0);
+    app.demo = false;
+    app.running = true;
+    app.status.heartbeat = Utc::now().timestamp();
+    app.page = Page::Settings;
+    app.repos_text = "example/unsaved".into();
+    app.draft.show_preview = true;
+    let size = vec2(360., 480.);
+    draw(&ctx, &mut app, size, vec![]);
+    finish_autostart_job(&mut app);
+    let labels = draw(&ctx, &mut app, size, vec![]);
+    assert_eq!(READS.load(Ordering::SeqCst), 1);
+    assert_eq!(WRITES.load(Ordering::SeqCst), 0);
+    let title = labels
+        .iter()
+        .find(|(text, _)| text == "Beim Anmelden starten")
+        .unwrap()
+        .1;
+    let position = pos2(size.x - 38., title.center().y);
+    for pressed in [true, false] {
+        draw(
+            &ctx,
+            &mut app,
+            size,
+            vec![
+                egui::Event::PointerMoved(position),
+                egui::Event::PointerButton {
+                    pos: position,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+    }
+    assert!(app.autostart_job.is_some(), "Toggle starts a worker");
+    finish_autostart_job(&mut app);
+    assert_eq!(WRITES.load(Ordering::SeqCst), 1);
+    assert_eq!(app.autostart_status.unwrap().enabled, Some(true));
+    assert_eq!(app.repos_text, "example/unsaved");
+    assert!(app.draft.show_preview);
+    assert!(!Store::open(&paths).unwrap().config().unwrap().show_preview);
+    draw(&ctx, &mut app, size, vec![]);
+    let labels = draw(&ctx, &mut app, size, vec![]);
+    assert!(
+        labels
+            .iter()
+            .any(|(text, _)| text == "Autostart aktiviert.")
+    );
+    assert_eq!(WRITES.load(Ordering::SeqCst), 1);
+    app.page = Page::Inbox;
+    draw(&ctx, &mut app, size, vec![]);
+    app.page = Page::Settings;
+    draw(&ctx, &mut app, size, vec![]);
+    finish_autostart_job(&mut app);
+    assert_eq!(
+        READS.load(Ordering::SeqCst),
+        2,
+        "Reopening refreshes OS state"
+    );
+    assert_eq!(app.autostart_status.unwrap().enabled, Some(false));
+}
+
+#[test]
+fn autostart_failure_and_portal_denial_never_report_success() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    app.autostart_status = Some(autostart::Status {
+        enabled: Some(true),
+        portal: true,
+    });
+    for result in [
+        Err("Permission denied".to_owned()),
+        Ok(autostart::Status {
+            enabled: Some(true),
+            portal: true,
+        }),
+        Ok(autostart::Status {
+            enabled: None,
+            portal: true,
+        }),
+    ] {
+        let (send, result_channel) = mpsc::channel();
+        app.autostart_job = Some(AutostartJob {
+            requested: Some(false),
+            result: result_channel,
+        });
+        app.poll_autostart();
+        assert!(app.autostart_job.is_some(), "Pending request stays pending");
+        send.send(result.clone()).unwrap();
+        app.poll_autostart();
+        assert!(app.autostart_job.is_none());
+        assert!(app.autostart_error.is_some());
+        if result.is_err() {
+            assert_eq!(app.autostart_status.unwrap().enabled, Some(true));
+        }
+        let labels = draw(&ctx, &mut app, vec2(360., 480.), vec![]);
+        assert!(
+            !labels
+                .iter()
+                .any(|(text, _)| text == "Autostart deaktiviert.")
+        );
+    }
+    let (send, result) = mpsc::channel();
+    app.autostart_job = Some(AutostartJob {
+        requested: Some(false),
+        result,
+    });
+    drop(send);
+    app.poll_autostart();
+    assert!(app.autostart_job.is_none());
+    assert_eq!(
+        app.autostart_error.as_deref(),
+        Some("Die Autostart-Aktion wurde abgebrochen. Bitte erneut versuchen.")
+    );
+}
+
+#[test]
+fn portal_autostart_actions_fit_all_languages_without_assuming_off() {
+    for language in Language::ALL
+        .into_iter()
+        .filter(|language| *language != Language::System)
+    {
+        let ctx = egui::Context::default();
+        let mut app = demo_app(&ctx);
+        app.config.language = language;
+        theme::fonts(&ctx, language);
+        app.page = Page::Settings;
+        app.autostart_status = Some(autostart::Status {
+            enabled: None,
+            portal: true,
+        });
+        let size = vec2(360., 480.);
+        draw(&ctx, &mut app, size, vec![]);
+        let labels = draw(&ctx, &mut app, size, vec![]);
+        for title in [
+            "Beim Anmelden starten",
+            "Systemdialog",
+            "Autostart aktivieren",
+            "Autostart deaktivieren",
+            "Speichern",
+            "Test-Benachrichtigung",
+        ] {
+            let rect = labels
+                .iter()
+                .find(|(text, _)| text == language.text(title))
+                .unwrap_or_else(|| panic!("{language:?}: missing {title}"))
+                .1;
+            assert!(
+                Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect),
+                "{language:?}: {title}: {rect:?}"
+            );
+        }
+        assert_eq!(app.autostart_status.unwrap().enabled, None);
+        assert!(
+            app.autostart_job.is_none(),
+            "Rendering does not prompt for a permission"
+        );
+    }
+}
+
+#[test]
+fn portal_autostart_buttons_wait_for_confirmation_and_prevent_duplicate_requests() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    let temporary = tempfile::tempdir().unwrap();
+    app.paths = Some(Paths::at(temporary.path().join("data")).unwrap());
+    app.demo = false;
+    app.running = true;
+    app.status.heartbeat = Utc::now().timestamp();
+    app.page = Page::Settings;
+    app.autostart_status = Some(autostart::Status {
+        enabled: None,
+        portal: true,
+    });
+    app.autostart_checked = true;
+    app.autostart_backend.set_enabled = |enabled, _| {
+        Ok(autostart::Status {
+            enabled: Some(enabled),
+            portal: true,
+        })
+    };
+    let size = vec2(360., 480.);
+    draw(&ctx, &mut app, size, vec![]);
+    click_text(&ctx, &mut app, size, "Autostart aktivieren");
+    assert_eq!(
+        app.autostart_status.unwrap().enabled,
+        None,
+        "A click does not imply consent"
+    );
+    assert_eq!(app.autostart_job.as_ref().unwrap().requested, Some(true));
+    let labels = draw(&ctx, &mut app, size, vec![]);
+    assert!(
+        labels
+            .iter()
+            .any(|(text, _)| text == "Autostart wird geändert …")
+    );
+    click_text(&ctx, &mut app, size, "Autostart deaktivieren");
+    assert_eq!(
+        app.autostart_job.as_ref().unwrap().requested,
+        Some(true),
+        "Pending actions stay disabled"
+    );
+    finish_autostart_job(&mut app);
+    assert_eq!(app.autostart_status.unwrap().enabled, Some(true));
+    click_text(&ctx, &mut app, size, "Autostart deaktivieren");
+    finish_autostart_job(&mut app);
+    assert_eq!(app.autostart_status.unwrap().enabled, Some(false));
+}
+
 #[test]
 fn language_and_theme_changes_persist_without_saving_other_drafts() {
     let ctx = egui::Context::default();

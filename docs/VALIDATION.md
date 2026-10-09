@@ -5,6 +5,16 @@ results describe the code and environment at that time, including features that
 have since changed. They are not a claim that every check was rerun against the
 latest revision.
 
+## Cross-platform login startup
+
+- **110 Rust tests passed** with `cargo test --locked --offline --all-targets`, including explicit-only startup changes, error/pending UI states, portal permission results, desktop-file escaping and precedence, stale/desktop-disabled Linux registrations, Windows command encoding, and atomic LaunchAgent writes.
+- **11 packaging tests passed**, including Windows upgrade/uninstall registration behavior. Shell syntax and seven-language catalog keys/placeholders were checked.
+- Clippy passed with the same five existing suggestions, and the Linux release build passed.
+- The Windows backend and its tests were typechecked for `x86_64-pc-windows-msvc` in isolation. The macOS Core Foundation backend/tests were typechecked on Linux with framework linking disabled; this is not a macOS build or runtime test.
+- UI tests cover native and portal controls at 360 × 480 in all seven languages, including a pending system request without blocking or duplicating writes. Native egui captures were inspected for the English native control and German/Japanese portal controls.
+
+No autostart registration was changed in the actual user profile. File tests use temporary directories and UI tests inject a fake backend. Actual logout/login on each OS, macOS background-item approval, Windows Task Manager overrides, and a live Flatpak Background portal dialog remain target-system checks. The isolated D-Bus test cannot run in this sandbox because Unix socket binding is prohibited.
+
 ## Unread tray indicator and mark-as-unread action
 
 - **97 Rust tests passed** with `cargo test --locked --offline --all-targets`. New coverage checks tray badge transitions and ARGB pixmaps, persistent unread state without replaying desktop notifications, legacy archived entries, independent row/GitHub/unread actions, keyboard activation, and narrow layouts.

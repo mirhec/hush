@@ -27,10 +27,13 @@ the workflow before the expensive platform builds.
 | macOS Intel | `Hush-VERSION-macos-x86_64.pkg` | `/Applications/Hush.app` |
 | Linux x86-64 | `Hush-VERSION-linux-x86_64.flatpak` | Flatpak, per user |
 
-Autostart is not enabled automatically. The Windows installer offers it as an
-optional checkbox that is initially unchecked. Uninstalling preserves account
-data and history; use Hush's disconnect-and-delete action first to remove them
-if needed.
+Autostart is not enabled automatically. **Start at login** is available in Hush
+settings on every platform. The Windows installer preserves the current choice
+during upgrades, refreshes an existing Run entry to the installed executable,
+and records uninstall cleanup even when autostart is enabled later from Hush.
+Uninstalling preserves account data and history; use Hush's
+disconnect-and-delete action first to remove them if needed. Disable autostart
+before manually removing a native macOS/Linux installation.
 
 ## Release process
 
@@ -152,6 +155,11 @@ bus. Data is stored under `~/.var/app/io.hush.github/data/hush/`, and tokens are
 stored in the system keychain. Existing data from installations outside Flatpak
 is not migrated automatically. Tray and service remain active after the window
 closes; the desktop needs a StatusNotifier host and an unlocked Secret Service.
+Autostart uses the Background portal and its permission dialog without additional
+filesystem grants. The desktop must supply a portal backend implementing
+Background; missing support and denied requests appear in Hush. Because the
+portal does not expose the saved preference, the UI offers explicit enable and
+disable actions rather than showing an unverified toggle state.
 
 ```sh
 flatpak install --user Hush-1.0.0-linux-x86_64.flatpak
@@ -198,8 +206,13 @@ On Windows with Inno Setup 6, after `cargo build --release`:
 ```
 
 Test installers on their target systems for installation, updates, Start menu/app
-identity, tray behavior, and notifications. During the original local validation
-on Linux, Windows/macOS packaging tools and GitHub Actions were not run. The
+identity, tray behavior, notifications, and startup after a real logout/login.
+Check both autostart enable and disable, upgrade preservation on Windows, and
+portal approval, rejection, cancellation, and missing-backend behavior for
+Flatpak. On Niri, use its systemd session integration or an XDG autostart runner.
+
+During the original local validation on Linux, Windows/macOS packaging tools
+and GitHub Actions were not run. The
 Flatpak run was blocked by restricted sandbox sockets; its manifest and source
 preparation were validated locally. These historical results do not replace
 validation of a new release on each target system.
@@ -208,4 +221,6 @@ References: [GitHub release events](https://docs.github.com/en/actions/reference
 [Inno Setup: per-user installation](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm),
 [AppUserModelID in shortcuts](https://jrsoftware.org/ishelp/topic_iconssection.htm),
 [Apple packaging](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution),
-[Flatpak desktop integration](https://docs.flatpak.org/en/latest/desktop-integration.html).
+[Flatpak desktop integration](https://docs.flatpak.org/en/latest/desktop-integration.html),
+[Background portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Background.html),
+[Niri session integration](https://niri-wm.github.io/niri/Integrating-niri.html).

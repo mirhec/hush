@@ -1991,6 +1991,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "core-foundation 0.10.1",
  "directories",
  "eframe",
  "fs2",
@@ -2008,6 +2009,7 @@ dependencies = [
  "tray-icon",
  "url",
  "webbrowser",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 
