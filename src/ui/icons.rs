@@ -8,6 +8,7 @@ pub enum Icon {
     ReviewRequested,
     ReviewSubmitted,
     ExternalLink,
+    MarkUnread,
     Search,
     Inbox,
     Mention,
@@ -102,6 +103,10 @@ pub fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
             path(&[(10., 4.), (4., 4.), (4., 20.), (20., 20.), (20., 14.)]);
             path(&[(14., 3.), (21., 3.), (21., 10.)]);
             line((11., 13.), (21., 3.));
+        }
+        Icon::MarkUnread => {
+            path(&[(3., 6.), (21., 6.), (21., 19.), (3., 19.), (3., 6.)]);
+            path(&[(3., 6.), (12., 13.), (21., 6.)]);
         }
         Icon::Mention => {
             circle(11., 12., 4.);

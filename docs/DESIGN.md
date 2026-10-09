@@ -16,6 +16,10 @@ The inbox shows the 20 newest entries by default, including read notifications. 
 
 Clicking a row marks the entry as read locally without opening the browser. Hovering over a row reveals a separate GitHub button. The button is also reachable with the keyboard and visible when focused. It opens the entry in the system browser and marks it as read locally after a successful handoff. If the handoff fails, an unread entry stays unread and a toast shows the error.
 
+Read rows offer a separate **Mark as unread** action on hover or keyboard focus. This saves the entry's unread state for later without changing its chronological position or sending another desktop notification. The optional unread filter helps find these entries. Clicking the row itself continues to mark it as read.
+
+A dot on the tray icon indicates any unread entry in the retained local history, including entries manually marked unread. Search, filters, and the 20-entry list limit do not affect it. The dot clears when all entries are read, while the tray tooltip supplies the exact unread count and service status.
+
 Ctrl/Cmd+K focuses search. Escape closes the filter menu or returns from settings to the inbox. The back arrow in settings performs the same navigation. Unsaved settings are retained when switching views.
 
 Settings are split across three tabs: notifications, account, and diagnostics. Event types and delivery options appear side by side at content widths of 520 pixels or more, and stacked below that. Toggle rows are at most 40 pixels high; supporting explanations appear in tooltips. Save and test-notification controls remain visible below the scroll area. Pause and resume controls sit under the refresh settings; manual refresh is available in diagnostics. The theme can be switched in the settings header.
@@ -30,7 +34,7 @@ The [English inbox](screenshots/inbox-english.png), [Japanese settings](screensh
 
 ## Checking the layout
 
-The [inbox](screenshots/compact-inbox.png), [filter menu](screenshots/inbox-filters.png), [GitHub hover action at 360 pixels](screenshots/inbox-hover-small.png), and [small settings window](screenshots/compact-settings-small.png) images show actual egui drawing data with demo content. They were rendered without a desktop session from egui triangles and the corresponding font atlas. They demonstrate the layout, not native operating system interaction.
+The [inbox](screenshots/compact-inbox.png), [filter menu](screenshots/inbox-filters.png), [GitHub hover action at 360 pixels](screenshots/inbox-hover-small.png), [mark-as-unread action](screenshots/inbox-mark-unread.png), and [small settings window](screenshots/compact-settings-small.png) images show actual egui drawing data with demo content. They were rendered without a desktop session from egui triangles and the corresponding font atlas. They demonstrate the layout, not native operating system interaction.
 
 ```sh
 HUSH_UI_CAPTURE_DIR=/tmp/hush-ui cargo test --locked --lib export_native_ui_frames -- --ignored

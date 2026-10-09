@@ -13,6 +13,30 @@ fn export_native_ui_frames() {
         ("inbox-all", 440., 640., Page::Inbox, false, false),
         ("inbox-hover", 440., 640., Page::Inbox, false, false),
         ("inbox-small-hover", 360., 480., Page::Inbox, false, false),
+        (
+            "inbox-unread-action-hover",
+            440.,
+            640.,
+            Page::Inbox,
+            false,
+            false,
+        ),
+        (
+            "inbox-unread-action-small-hover",
+            360.,
+            480.,
+            Page::Inbox,
+            false,
+            false,
+        ),
+        (
+            "inbox-unread-action-light-hover",
+            360.,
+            480.,
+            Page::Inbox,
+            false,
+            true,
+        ),
         ("filters", 440., 640., Page::Inbox, true, false),
         ("filters-small", 360., 480., Page::Inbox, true, false),
         ("settings", 440., 640., Page::Settings, false, false),
@@ -100,6 +124,9 @@ fn export_native_ui_frames() {
         if name == "inbox-all" {
             app.unread_only = false;
         }
+        if name.contains("unread-action") {
+            app.events[0].unread = false;
+        }
         if name.ends_with("-empty") {
             app.events.clear();
         }
@@ -113,7 +140,12 @@ fn export_native_ui_frames() {
                 egui::RawInput {
                     screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(width, height))),
                     events: if name.ends_with("hover") {
-                        vec![egui::Event::PointerMoved(pos2(width - 26., 110.))]
+                        let inset = if name.contains("unread-action") {
+                            58.
+                        } else {
+                            26.
+                        };
+                        vec![egui::Event::PointerMoved(pos2(width - inset, 110.))]
                     } else {
                         vec![]
                     },

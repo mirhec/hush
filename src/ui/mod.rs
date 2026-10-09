@@ -416,6 +416,20 @@ impl HushApp {
             Err(error) => self.message = Some(Toast::new(error.to_string(), true)),
         }
     }
+    fn unread_event(&mut self, event: &Event) {
+        let result = self
+            .store
+            .as_ref()
+            .map_or(Ok(()), |store| store.unread(&event.id));
+        match result {
+            Ok(()) => {
+                if let Some(item) = self.events.iter_mut().find(|item| item.id == event.id) {
+                    item.unread = true;
+                }
+            }
+            Err(error) => self.message = Some(Toast::new(error.to_string(), true)),
+        }
+    }
     fn refresh(&mut self) {
         let result = self
             .store
@@ -861,6 +875,8 @@ impl HushApp {
                     let card = event_card(ui, &event, p, l);
                     if card.github.clicked() {
                         self.open_event(&event);
+                    } else if card.unread.is_some_and(|action| action.clicked()) {
+                        self.unread_event(&event);
                     } else if card.row.clicked() {
                         self.read_event(&event);
                     }
@@ -1107,6 +1123,7 @@ fn setting_toggle(
 
 struct EventCardResponse {
     row: egui::Response,
+    unread: Option<egui::Response>,
     github: egui::Response,
 }
 
@@ -1114,10 +1131,16 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette, l: Language) -> EventCardR
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 56.), Sense::hover());
     let response = ui.interact(r, ui.id().with(&event.id), Sense::click());
     let github_rect = Rect::from_min_size(r.right_top() + vec2(-34., 4.), vec2(28., 28.));
-    // Register the action every frame so keyboard users can reach it without hovering.
+    let unread_rect = github_rect.translate(vec2(-32., 0.));
+    // Register actions every frame so keyboard users can reach them without hovering.
+    let unread = (!event.unread)
+        .then(|| ui.interact(unread_rect, response.id.with("unread"), Sense::click()));
     let github = ui.interact(github_rect, response.id.with("github"), Sense::click());
-    let show_github = response.contains_pointer() || response.has_focus() || github.has_focus();
-    if show_github {
+    let show_actions = response.contains_pointer()
+        || response.has_focus()
+        || github.has_focus()
+        || unread.as_ref().is_some_and(|action| action.has_focus());
+    if show_actions {
         ui.painter().rect_filled(r.shrink2(vec2(0., 2.)), 6, p.card);
     }
     if response.has_focus() {
@@ -1147,7 +1170,7 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette, l: Language) -> EventCardR
         &event.title,
         13.,
         if event.unread { p.text } else { p.muted },
-        r.width() - 78.,
+        r.width() - if event.unread { 78. } else { 110. },
     );
     paint_elided(
         ui,
@@ -1174,7 +1197,39 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette, l: Language) -> EventCardR
     if github.clicked() {
         github.request_focus();
     }
-    if show_github {
+    if let Some(unread) = &unread {
+        if unread.clicked() {
+            // This action disappears once the event is unread; leave focus on its row.
+            response.request_focus();
+        }
+        if show_actions {
+            if unread.hovered() || unread.has_focus() {
+                ui.painter().rect_filled(unread_rect, 4, p.hover);
+            }
+            if unread.has_focus() {
+                ui.painter().rect_stroke(
+                    unread_rect,
+                    4,
+                    Stroke::new(1., p.accent),
+                    StrokeKind::Inside,
+                );
+            }
+            icons::paint(
+                ui.painter(),
+                unread_rect.shrink(6.),
+                Icon::MarkUnread,
+                p.text,
+            );
+        }
+        unread.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                true,
+                format!("{} – {}", event.title, l.text("Als ungelesen markieren")),
+            )
+        });
+    }
+    if show_actions {
         if github.hovered() || github.has_focus() {
             ui.painter().rect_filled(github_rect, 4, p.hover);
         }
@@ -1224,6 +1279,11 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette, l: Language) -> EventCardR
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     EventCardResponse {
         row,
+        unread: unread.map(|action| {
+            action
+                .on_hover_text(l.text("Als ungelesen markieren"))
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+        }),
         github: github
             .on_hover_text(l.text("Auf GitHub öffnen"))
             .on_hover_cursor(egui::CursorIcon::PointingHand),

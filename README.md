@@ -56,6 +56,12 @@ Hush also marks the entry as read after a successful browser handoff. If opening
 fails, an unread entry stays unread and a notice appears. Only
 `https://github.com` links are accepted.
 
+Read entries also show a **Mark as unread** button on hover or keyboard focus.
+Use it to keep an entry for later: the unread state is saved locally across
+restarts and appears in the optional **Unread** filter. The entry keeps its
+original position by event time; marking it unread does not schedule a reminder
+or send another desktop notification.
+
 The gear at the top right opens settings with notifications, account, and
 diagnostics tabs. `Ctrl+K` / `Cmd+K` switches to search; `Esc` closes the filter
 menu or returns from settings to the inbox.
@@ -317,8 +323,12 @@ prevent duplicate background processes and duplicate windows/tray icons. Without
 an available tray, closing the window still leaves the background service running.
 
 Left-clicking the tray icon opens the window or brings it to the front.
-Right-clicking opens its menu. The tray shows service status and unread count,
-without event titles or repository names. Its actions open Hush or settings,
+Right-clicking opens its menu. A dot on the tray icon indicates that at least one
+local notification is unread, including entries manually marked unread. It
+counts the entire retained history, independently of search, filters, and the
+20-entry list limit, and disappears when all entries are read. The tray tooltip
+shows service status and the exact unread count, without event titles or
+repository names. Its actions open Hush or settings,
 refresh, pause for 30 minutes/resume, start the service, or quit Hush. Quitting
 ends the window, tray, and service once pending API requests finish. Stopping the
 background service in settings or with `hush --stop` stops polling only; the
