@@ -11,6 +11,8 @@ fn export_native_ui_frames() {
     for (name, width, height, page, filters, light) in [
         ("inbox", 440., 640., Page::Inbox, false, false),
         ("inbox-all", 440., 640., Page::Inbox, false, false),
+        ("inbox-hover", 440., 640., Page::Inbox, false, false),
+        ("inbox-small-hover", 360., 480., Page::Inbox, false, false),
         ("filters", 440., 640., Page::Inbox, true, false),
         ("filters-small", 360., 480., Page::Inbox, true, false),
         ("settings", 440., 640., Page::Settings, false, false),
@@ -70,6 +72,11 @@ fn export_native_ui_frames() {
             let mut output = ctx.run_ui(
                 egui::RawInput {
                     screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(width, height))),
+                    events: if name.ends_with("hover") {
+                        vec![egui::Event::PointerMoved(pos2(width - 26., 110.))]
+                    } else {
+                        vec![]
+                    },
                     ..Default::default()
                 },
                 |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()),

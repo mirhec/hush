@@ -34,6 +34,8 @@ use theme::{Palette, label, primary, section};
 use toast::Toast;
 use zeroize::{Zeroize, Zeroizing};
 
+const INBOX_LIMIT: usize = 20;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Inbox,
@@ -138,7 +140,7 @@ impl HushApp {
                 SettingsTab::Notifications
             },
             kind: None,
-            unread_only: true,
+            unread_only: false,
             search: String::new(),
             open_url: webbrowser::open,
             repos_text: repo_text(&cfg.repositories),
@@ -353,6 +355,9 @@ impl HushApp {
         if !self.open(&event.url) {
             return;
         }
+        self.read_event(event);
+    }
+    fn read_event(&mut self, event: &Event) {
         let result = self
             .store
             .as_ref()
@@ -679,7 +684,8 @@ impl HushApp {
     }
     fn visible_events(&self) -> Vec<Event> {
         let needle = self.search.to_lowercase();
-        self.events
+        let mut matches: Vec<_> = self
+            .events
             .iter()
             .filter(|event| {
                 self.kind.is_none_or(|kind| event.kind == kind)
@@ -691,8 +697,9 @@ impl HushApp {
                     .to_lowercase()
                     .contains(&needle)
             })
-            .cloned()
-            .collect()
+            .collect();
+        matches.sort_by_key(|event| std::cmp::Reverse(event.occurred_at));
+        matches.into_iter().take(INBOX_LIMIT).cloned().collect()
     }
     fn inbox(&mut self, ui: &mut Ui) {
         let p = self.palette();
@@ -764,8 +771,11 @@ impl HushApp {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.;
                 for event in visible {
-                    if event_card(ui, &event, p).clicked() {
+                    let card = event_card(ui, &event, p);
+                    if card.github.clicked() {
                         self.open_event(&event);
+                    } else if card.row.clicked() {
+                        self.read_event(&event);
                     }
                 }
             });
@@ -1006,11 +1016,28 @@ fn setting_toggle(
         })
 }
 
-fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> egui::Response {
+struct EventCardResponse {
+    row: egui::Response,
+    github: egui::Response,
+}
+
+fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> EventCardResponse {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 56.), Sense::hover());
     let response = ui.interact(r, ui.id().with(&event.id), Sense::click());
-    if response.hovered() || response.has_focus() {
+    let github_rect = Rect::from_min_size(r.right_top() + vec2(-34., 4.), vec2(28., 28.));
+    // Register the action every frame so keyboard users can reach it without hovering.
+    let github = ui.interact(github_rect, response.id.with("github"), Sense::click());
+    let show_github = response.contains_pointer() || response.has_focus() || github.has_focus();
+    if show_github {
         ui.painter().rect_filled(r, 4, p.card);
+    }
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            r.shrink(1.),
+            4,
+            Stroke::new(1., p.accent),
+            StrokeKind::Inside,
+        );
     }
     ui.painter().line_segment(
         [r.left_bottom(), r.right_bottom()],
@@ -1028,7 +1055,7 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> egui::Response {
         &event.title,
         13.,
         if event.unread { p.text } else { p.muted },
-        r.width() - 38.,
+        r.width() - 70.,
     );
     paint_elided(
         ui,
@@ -1052,26 +1079,61 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> egui::Response {
     if response.clicked() {
         response.request_focus();
     }
+    if github.clicked() {
+        github.request_focus();
+    }
+    if show_github {
+        if github.hovered() || github.has_focus() {
+            ui.painter().rect_filled(github_rect, 4, p.hover);
+        }
+        if github.has_focus() {
+            ui.painter().rect_stroke(
+                github_rect,
+                4,
+                Stroke::new(1., p.accent),
+                StrokeKind::Inside,
+            );
+        }
+        icons::paint(
+            ui.painter(),
+            github_rect.shrink(6.),
+            Icon::ExternalLink,
+            p.text,
+        );
+    }
+    github.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            true,
+            format!("{} – auf GitHub öffnen", event.title),
+        )
+    });
     response.widget_info(|| {
         egui::WidgetInfo::labeled(
-            egui::WidgetType::Link,
+            egui::WidgetType::Button,
             true,
             format!(
-                "{}: {} – auf GitHub öffnen",
+                "{}: {} – als gelesen markieren",
                 event.kind.short(),
                 event.title
             ),
         )
     });
-    response
+    let row = response
         .on_hover_text(format!(
-            "{}\n{}\n{} · @{}\nAuf GitHub öffnen",
+            "{}\n{}\n{} · @{}\nAls gelesen markieren",
             event.kind.short(),
             event.title,
             event.repository,
             event.actor
         ))
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    EventCardResponse {
+        row,
+        github: github
+            .on_hover_text("Auf GitHub öffnen")
+            .on_hover_cursor(egui::CursorIcon::PointingHand),
+    }
 }
 
 fn age(event: &Event) -> String {

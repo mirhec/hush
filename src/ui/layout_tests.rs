@@ -10,7 +10,7 @@ fn settings_rows_keep_equal_width_and_align_switches_with_tooltips() {
             rows.clear();
             ui.set_width(width);
             for (title, help, icon) in [
-                ("Reviews", "Deine Pull Requests.", Some(Icon::Check)),
+                ("Reviews", "Deine Pull Requests.", Some(Icon::ReviewSubmitted)),
                 ("Erwähnungen", "Neue Erwähnungen in Kommentaren zu Issues und Pull Requests in deinen ausgewählten Repositories.", Some(Icon::Mention)),
                 ("Auf dem Desktop anzeigen", "Auch bei geschlossenem Fenster.", None),
             ] {
@@ -116,11 +116,11 @@ fn click_text(ctx: &egui::Context, app: &mut HushApp, size: egui::Vec2, title: &
 }
 
 #[test]
-fn narrow_inbox_defaults_to_unread_and_keeps_rows_compact() {
+fn narrow_inbox_defaults_to_all_recent_events_and_keeps_rows_compact() {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx);
-    assert!(app.unread_only);
-    assert_eq!(app.visible_events().len(), 4);
+    assert!(!app.unread_only);
+    assert_eq!(app.visible_events().len(), 8);
     for width in [360., 440.] {
         let size = vec2(width, 640.);
         draw(&ctx, &mut app, size, vec![]);
@@ -147,7 +147,7 @@ fn narrow_inbox_defaults_to_unread_and_keeps_rows_compact() {
         let mut rect = Rect::NOTHING;
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.set_width(width);
-            rect = event_card(ui, &event, Palette::dark()).rect;
+            rect = event_card(ui, &event, Palette::dark()).row.rect;
         });
         output.textures_delta.clear();
         assert_eq!(rect.height(), 56.);
@@ -163,7 +163,6 @@ fn filter_menu_combines_unread_type_and_search() {
     draw(&ctx, &mut app, size, vec![]);
     click_text(&ctx, &mut app, size, "Filter");
     assert!(egui::Popup::is_id_open(&ctx, filter_popup_id()));
-    click_text(&ctx, &mut app, size, "Ungelesen");
     assert!(!app.unread_only);
     assert_eq!(app.visible_events().len(), 8);
     click_text(&ctx, &mut app, size, "Neue Issues");
@@ -187,6 +186,128 @@ fn escape() -> egui::Event {
         repeat: false,
         modifiers: egui::Modifiers::NONE,
     }
+}
+
+#[test]
+fn inbox_shows_twenty_newest_matches_including_read_events() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    let seed = app.events[0].clone();
+    app.events = (0..50)
+        .map(|index| {
+            let mut event = seed.clone();
+            event.id = index.to_string();
+            event.occurred_at = seed.occurred_at - chrono::Duration::minutes(index);
+            event.unread = index % 2 == 0;
+            event.kind = if event.unread {
+                Kind::Issue
+            } else {
+                Kind::Review
+            };
+            event.title = format!("{} {index}", if event.unread { "issue" } else { "review" });
+            event
+        })
+        .rev()
+        .collect();
+    let visible = app.visible_events();
+    assert_eq!(visible.len(), 20);
+    assert_eq!(visible.first().unwrap().id, "0");
+    assert_eq!(visible.last().unwrap().id, "19");
+    assert!(visible.iter().any(|event| !event.unread));
+    app.kind = Some(Kind::Review);
+    app.search = "review".into();
+    let visible = app.visible_events();
+    assert_eq!(visible.len(), 20);
+    assert_eq!(visible.first().unwrap().id, "1");
+    assert_eq!(visible.last().unwrap().id, "39");
+    app.unread_only = true;
+    assert!(app.visible_events().is_empty());
+    app.kind = None;
+    app.search.clear();
+    assert_eq!(app.visible_events().len(), 20);
+    assert!(app.visible_events().iter().all(|event| event.unread));
+}
+
+fn click_github(ctx: &egui::Context, app: &mut HushApp, size: egui::Vec2, title: &str) {
+    let labels = draw(ctx, app, size, vec![]);
+    let title_rect = labels.iter().find(|(text, _)| text == title).unwrap().1;
+    let position = pos2(size.x - 26., title_rect.top() + 10.);
+    draw(ctx, app, size, vec![egui::Event::PointerMoved(position)]);
+    for pressed in [true, false] {
+        draw(
+            ctx,
+            app,
+            size,
+            vec![egui::Event::PointerButton {
+                pos: position,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+    }
+}
+
+#[test]
+fn github_action_opens_the_browser_and_marks_the_event_read() {
+    thread_local! { static CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+    for width in [360., 440.] {
+        let ctx = egui::Context::default();
+        let mut app = demo_app(&ctx);
+        app.open_url = |url| {
+            assert_eq!(url, "https://github.com/notifications");
+            CALLS.set(CALLS.get() + 1);
+            Ok(())
+        };
+        CALLS.set(0);
+        let title = app.events[0].title.clone();
+        click_github(&ctx, &mut app, vec2(width, 640.), &title);
+        assert_eq!(CALLS.get(), 1);
+        assert!(!app.events[0].unread);
+        assert_eq!(app.visible_events().len(), 8);
+    }
+}
+
+#[test]
+fn github_action_is_keyboard_reachable_and_does_not_activate_the_row() {
+    let ctx = egui::Context::default();
+    let event = demo::events().remove(0);
+    let mut responses = None;
+    let mut run = |events| {
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                events,
+                ..Default::default()
+            },
+            |ui| {
+                ui.set_width(336.);
+                responses = Some(event_card(ui, &event, Palette::dark()));
+            },
+        );
+        output.textures_delta.clear();
+        responses.take().unwrap()
+    };
+    let first = run(vec![]);
+    ctx.memory_mut(|memory| memory.request_focus(first.row.id));
+    let key = |key, pressed| egui::Event::Key {
+        key,
+        physical_key: None,
+        pressed,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    };
+    run(vec![key(egui::Key::Tab, true)]);
+    let focused = run(vec![key(egui::Key::Tab, false)]);
+    assert!(focused.github.has_focus());
+    let clicked = run(vec![key(egui::Key::Enter, true)]);
+    assert!(clicked.github.clicked());
+    assert!(!clicked.row.clicked());
+    assert!(clicked.row.rect.contains_rect(clicked.github.rect));
+    run(vec![key(egui::Key::Enter, false)]);
+    ctx.memory_mut(|memory| memory.request_focus(first.row.id));
+    let clicked = run(vec![key(egui::Key::Space, true)]);
+    assert!(clicked.row.clicked());
+    assert!(!clicked.github.clicked());
 }
 
 #[test]
@@ -251,7 +372,7 @@ fn narrow_settings_keep_footer_visible_and_preserve_drafts() {
 }
 
 #[test]
-fn clicking_an_event_opens_github_and_persists_read_state() {
+fn clicking_an_event_persists_read_state_without_opening_github() {
     let ctx = egui::Context::default();
     let mut app = demo_app(&ctx);
     let temporary = tempfile::tempdir().unwrap();
@@ -263,20 +384,16 @@ fn clicking_an_event_opens_github_and_persists_read_state() {
         .ingest("alex", std::slice::from_ref(&event), false)
         .unwrap();
     app.store = Some(store);
-    // A browser substitute verifies the actual click path without launching external software.
-    app.open_url = |url| {
-        assert_eq!(url, "https://github.com/notifications");
-        Ok(())
-    };
+    app.open_url = |_| panic!("Row clicks must not open the browser");
     let size = vec2(440., 640.);
     draw(&ctx, &mut app, size, vec![]);
     click_text(&ctx, &mut app, size, &event.title);
     assert!(!app.events[0].unread);
     assert!(!Store::open(&paths).unwrap().events().unwrap()[0].unread);
     assert!(app.page == Page::Inbox);
-    assert_eq!(app.visible_events().len(), 3);
+    assert_eq!(app.visible_events().len(), 8);
     let labels = draw(&ctx, &mut app, size, vec![]);
-    assert!(!labels.iter().any(|(text, _)| text == &event.title));
+    assert!(labels.iter().any(|(text, _)| text == &event.title));
 }
 
 #[test]
@@ -287,7 +404,7 @@ fn failed_or_unsafe_links_leave_events_unread() {
     let size = vec2(360., 480.);
     let event = app.events[0].clone();
     draw(&ctx, &mut app, size, vec![]);
-    click_text(&ctx, &mut app, size, &event.title);
+    click_github(&ctx, &mut app, size, &event.title);
     assert!(app.events[0].unread);
     assert!(app.message.is_some());
     app.open_url = |_| panic!("Unsafe URLs must not reach the browser");
@@ -304,8 +421,10 @@ fn mark_all_read_is_available_in_filter_menu() {
     draw(&ctx, &mut app, size, vec![]);
     click_text(&ctx, &mut app, size, "Filter");
     click_text(&ctx, &mut app, size, "Alle als gelesen markieren");
-    assert!(app.visible_events().is_empty());
+    assert_eq!(app.visible_events().len(), 8);
+    assert!(app.events.iter().all(|event| !event.unread));
     assert!(!egui::Popup::is_id_open(&ctx, filter_popup_id()));
+    app.unread_only = true;
     assert!(
         draw(&ctx, &mut app, size, vec![])
             .iter()
@@ -349,7 +468,7 @@ fn settings_switch_changes_only_after_click_and_supports_keyboard_focus() {
                     "Deine Pull Requests.",
                     &mut value,
                     Palette::dark(),
-                    Some(Icon::Check),
+                    Some(Icon::ReviewSubmitted),
                 );
                 toggle = row.inner.rect;
             },
