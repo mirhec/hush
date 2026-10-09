@@ -1,7 +1,10 @@
+#[cfg(test)]
+mod capture;
 mod demo;
 mod icons;
 #[cfg(test)]
 mod layout_tests;
+mod settings;
 mod theme;
 mod toast;
 
@@ -33,6 +36,13 @@ enum Page {
     Settings,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingsTab {
+    Notifications,
+    Account,
+    Diagnostics,
+}
+
 pub struct HushApp {
     paths: Option<Paths>,
     store: Option<Store>,
@@ -42,6 +52,7 @@ pub struct HushApp {
     events: Vec<Event>,
     status: RuntimeStatus,
     page: Page,
+    settings_tab: SettingsTab,
     kind: Option<Kind>,
     unread_only: bool,
     search: String,
@@ -100,6 +111,11 @@ impl HushApp {
             events,
             status,
             page,
+            settings_tab: if cfg.login.is_empty() {
+                SettingsTab::Account
+            } else {
+                SettingsTab::Notifications
+            },
             kind: None,
             unread_only: false,
             search: String::new(),
@@ -432,26 +448,21 @@ impl HushApp {
     }
     fn sidebar(&mut self, ui: &mut Ui) {
         let p = self.palette();
-        let available = ui.available_width();
-        let (brand, _) = ui.allocate_exact_size(vec2(available, 74.), Sense::hover());
-        let mark = Rect::from_min_size(brand.min + vec2(0., 11.), vec2(36., 36.));
-        ui.painter().rect_filled(mark, 11, p.accent);
-        icons::mark(ui.painter(), mark.center(), 23., p.on_accent);
-        ui.painter().text(
-            brand.min + vec2(48., 13.),
-            Align2::LEFT_TOP,
-            "hush",
-            FontId::proportional(30.),
-            p.text,
-        );
-        ui.painter().text(
-            brand.min + vec2(49., 47.),
-            Align2::LEFT_TOP,
-            "GITHUB",
-            FontId::proportional(8.6),
-            p.faint,
-        );
-        ui.add_space(26.);
+        let compact = ui.available_width() < 100.;
+        let (brand, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.), Sense::hover());
+        let mark = Rect::from_min_size(brand.min + vec2(4., 4.), vec2(28., 28.));
+        ui.painter().rect_filled(mark, 7, p.accent);
+        icons::mark(ui.painter(), mark.center(), 18., p.on_accent);
+        if !compact {
+            ui.painter().text(
+                brand.min + vec2(42., 17.),
+                Align2::LEFT_CENTER,
+                "hush",
+                FontId::proportional(22.),
+                p.text,
+            );
+        }
+        ui.add_space(8.);
         let unread = self
             .events
             .iter()
@@ -481,7 +492,11 @@ impl HushApp {
             self.kind = None;
             self.selected = None;
         }
-        section(ui, "BENACHRICHTIGUNGEN", p);
+        ui.add_space(8.);
+        ui.separator();
+        if !compact {
+            label(ui, "Filter", 11., p.faint);
+        }
         for kind in Kind::ALL {
             let n = self
                 .events
@@ -501,7 +516,7 @@ impl HushApp {
                 self.selected = None;
             }
         }
-        ui.add_space((ui.available_height() - 120.).max(20.));
+        ui.add_space((ui.available_height() - 82.).max(8.));
         if nav(
             ui,
             Icon::Settings,
@@ -510,53 +525,68 @@ impl HushApp {
             self.page == Page::Settings,
             p,
         ) {
+            if self.page != Page::Settings {
+                self.reset_draft();
+            }
             self.page = Page::Settings;
-            self.reset_draft();
             self.selected = None;
         }
-        ui.add_space(14.);
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(30., 30.), Sense::hover());
-            ui.painter().rect_filled(r, 10, p.hover);
-            let initial = self
-                .config
-                .login
-                .chars()
-                .next()
-                .unwrap_or('H')
-                .to_uppercase()
-                .to_string();
-            ui.painter().text(
-                r.center(),
-                Align2::CENTER_CENTER,
-                initial,
-                FontId::proportional(13.),
-                p.accent,
-            );
-            ui.vertical(|ui| {
-                label(
-                    ui,
-                    if self.config.login.is_empty() {
-                        "Noch nicht verbunden".into()
-                    } else {
-                        format!("@{}", self.config.login)
-                    },
-                    12.,
-                    p.text,
-                );
-                label(
-                    ui,
-                    if self.demo { "Demokonto" } else { "GitHub.com" },
-                    10.,
-                    p.faint,
-                );
-            });
+        ui.separator();
+        let account = if self.config.login.is_empty() {
+            "Nicht verbunden".into()
+        } else {
+            format!("@{}", self.config.login)
+        };
+        let (r, response) = ui.allocate_exact_size(vec2(ui.available_width(), 26.), Sense::click());
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "GitHub-Konto verwalten")
         });
+        let avatar = Rect::from_min_size(r.min + vec2(6., 2.), vec2(22., 22.));
+        ui.painter().rect_filled(avatar, 6, p.hover);
+        let initial = self
+            .config
+            .login
+            .chars()
+            .next()
+            .unwrap_or('H')
+            .to_uppercase()
+            .to_string();
+        ui.painter().text(
+            avatar.center(),
+            Align2::CENTER_CENTER,
+            initial,
+            FontId::proportional(11.),
+            p.accent,
+        );
+        if !compact {
+            paint_elided(
+                ui,
+                pos2(r.left() + 36., r.top() + 5.),
+                &account,
+                12.,
+                p.muted,
+                r.width() - 40.,
+            );
+        }
+        if response.on_hover_text("GitHub-Konto verwalten").clicked() {
+            if self.page != Page::Settings {
+                self.reset_draft();
+            }
+            self.page = Page::Settings;
+            self.settings_tab = SettingsTab::Account;
+            self.selected = None;
+        }
     }
+
     fn header(&mut self, ui: &mut Ui) {
         let p = self.palette();
         ui.horizontal(|ui| {
-            label(ui, "GitHub", 10.5, p.faint);
+            let title = match self.page {
+                Page::Settings => "Einstellungen",
+                Page::Archive => "Erledigt",
+                Page::Inbox => self.kind.map_or("Posteingang", Kind::label),
+            };
+            label(ui, title, 20., p.text);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if icons::button(
                     ui,
@@ -603,32 +633,46 @@ impl HushApp {
                     );
                 }
                 let status = if self.demo {
-                    "DEMO"
+                    "Demo"
                 } else if self.service_job.is_some() {
-                    "DIENST STARTET"
+                    "Startet"
                 } else if !self.running || !self.status.alive() {
-                    "DIENST INAKTIV"
+                    "Inaktiv"
                 } else if self.status.notification_error.is_some() {
-                    "ZUSTELLUNG FEHLGESCHLAGEN"
+                    "Zustellfehler"
                 } else if self.config.paused() {
-                    "PAUSIERT"
+                    "Pausiert"
                 } else if self.config.login.is_empty() {
-                    "NICHT VERBUNDEN"
+                    "Offline"
                 } else if self.status.warnings.is_empty() && self.status.last_sync.is_some() {
-                    "VERBUNDEN"
+                    "Verbunden"
                 } else {
-                    "STATUS PRÜFEN"
+                    "Prüfen"
                 };
-                let color = if self.demo || self.config.paused() || !self.status.warnings.is_empty()
+                let color = if self.status.notification_error.is_some() {
+                    p.danger
+                } else if self.demo
+                    || self.config.paused()
+                    || !self.status.warnings.is_empty()
+                    || !self.running
+                    || !self.status.alive()
+                    || self.config.login.is_empty()
                 {
                     p.amber
                 } else {
                     p.accent
                 };
-                label(ui, status, 10., color);
+                let (dot, response) = ui.allocate_exact_size(vec2(10., 16.), Sense::hover());
+                ui.painter().circle_filled(dot.center(), 3., color);
+                response.on_hover_text(status);
+                if ui.available_width() > 90. {
+                    label(ui, status, 11., color);
+                }
             });
         });
-        ui.add_space(21.);
+        ui.add_space(4.);
+        ui.separator();
+        ui.add_space(2.);
     }
     fn notice(&mut self, ui: &mut Ui) {
         let p = self.palette();
@@ -676,9 +720,11 @@ impl HushApp {
                 } else {
                     "Repository-Zugriff fehlgeschlagen. Für private Repositories einen Detail-Token hinterlegen."
                 }, 12., p.amber);
-                if self.page != Page::Settings && ui.small_button("Zugriff prüfen").clicked() {
+                if (self.page != Page::Settings || self.settings_tab != SettingsTab::Account)
+                    && ui.small_button("Zugriff prüfen").clicked() {
+                    if self.page != Page::Settings { self.reset_draft(); }
                     self.page = Page::Settings;
-                    self.reset_draft();
+                    self.settings_tab = SettingsTab::Account;
                 }
             });
             ui.add_space(8.);
@@ -695,43 +741,31 @@ impl HushApp {
     fn inbox(&mut self, ui: &mut Ui) {
         let p = self.palette();
         let archived = self.page == Page::Archive;
-        let heading = if archived {
-            "Erledigt"
-        } else if self.kind.is_some() {
-            self.kind.unwrap().label()
-        } else {
-            "Posteingang"
-        };
-        label(ui, heading, 34., p.text);
-        ui.add_space(22.);
+        let narrow = ui.available_width() < 470.;
         ui.horizontal(|ui| {
-            let search_width = (ui.available_width() - 220.).max(190.);
+            let search_width = if narrow {
+                ui.available_width()
+            } else {
+                (ui.available_width() - 210.).max(100.)
+            };
             let response = ui.add_sized(
-                [search_width, 37.],
+                [search_width, 28.],
                 egui::TextEdit::singleline(&mut self.search)
-                    .hint_text("Benachrichtigungen durchsuchen …")
-                    .margin(vec2(12., 9.)),
+                    .hint_text("Suchen …")
+                    .margin(vec2(8., 5.)),
             );
             if self.focus_search {
                 response.request_focus();
                 self.focus_search = false;
             }
-            ui.checkbox(&mut self.unread_only, "Ungelesen");
-            if ui.button("Alles gelesen").clicked() {
-                let r = if let Some(s) = &self.store {
-                    s.read_all()
-                } else {
-                    Ok(())
-                };
-                if r.is_ok() {
-                    for e in &mut self.events {
-                        e.unread = false;
-                    }
-                }
-                self.report(r, "Alle lokalen Ereignisse als gelesen markiert.");
+            if !narrow {
+                self.inbox_actions(ui);
             }
         });
-        ui.add_space(15.);
+        if narrow {
+            ui.horizontal(|ui| self.inbox_actions(ui));
+        }
+        ui.add_space(4.);
         let needle = self.search.to_lowercase();
         let visible: Vec<Event> = self
             .events
@@ -746,24 +780,14 @@ impl HushApp {
             })
             .cloned()
             .collect();
-        let heading = if archived {
-            "ERLEDIGTE BENACHRICHTIGUNGEN"
-        } else {
-            "BENACHRICHTIGUNGEN"
-        };
-        ui.horizontal(|ui| {
-            label(ui, heading, 10.5, p.faint);
-            label(ui, format!("{}", visible.len()), 10.5, p.muted);
-        });
-        ui.add_space(5.);
         if visible.is_empty() {
-            ui.add_space(65.);
+            ui.add_space(36.);
             ui.vertical_centered(|ui| {
-                let (r, _) = ui.allocate_exact_size(vec2(64., 64.), Sense::hover());
+                let (r, _) = ui.allocate_exact_size(vec2(40., 40.), Sense::hover());
                 ui.painter()
-                    .circle_stroke(r.center(), 31., Stroke::new(1., p.border));
-                icons::mark(ui.painter(), r.center(), 31., p.accent);
-                ui.add_space(17.);
+                    .circle_stroke(r.center(), 19., Stroke::new(1., p.border));
+                icons::mark(ui.painter(), r.center(), 22., p.accent);
+                ui.add_space(10.);
                 label(
                     ui,
                     if self.search.is_empty() {
@@ -771,7 +795,7 @@ impl HushApp {
                     } else {
                         "Keine Treffer"
                     },
-                    24.,
+                    18.,
                     p.text,
                 );
                 label(
@@ -787,12 +811,13 @@ impl HushApp {
             });
             return;
         }
-        let list_height = ui.available_height() - 28.;
+        let list_height = ui.available_height();
         egui::ScrollArea::vertical()
             .id_salt("inbox-scroll")
-            .max_height(list_height.max(120.))
+            .max_height(list_height.max(40.))
             .auto_shrink([false, false])
             .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.;
                 let mut last_date = String::new();
                 for e in visible {
                     let date = e
@@ -802,8 +827,9 @@ impl HushApp {
                         .to_string();
                     if date != last_date {
                         if !last_date.is_empty() {
-                            ui.add_space(12.);
+                            ui.add_space(8.);
                         }
+                        ui.add_space(5.);
                         label(
                             ui,
                             if e.occurred_at.with_timezone(&Local).date_naive()
@@ -816,206 +842,93 @@ impl HushApp {
                             10.,
                             p.faint,
                         );
+                        ui.add_space(5.);
                         last_date = date;
                     }
                     let selected = self.selected.as_deref() == Some(e.id.as_str());
-                    if event_card(ui, &e, selected, p) {
+                    if event_card(ui, &e, selected, p).clicked() {
                         self.select(e.id.clone());
                     }
                 }
             });
     }
+    fn inbox_actions(&mut self, ui: &mut Ui) {
+        ui.checkbox(&mut self.unread_only, "Ungelesen");
+        if ui.button("Alles gelesen").clicked() {
+            let result = self.store.as_ref().map_or(Ok(()), |store| store.read_all());
+            if result.is_ok() {
+                for event in &mut self.events {
+                    event.unread = false;
+                }
+            }
+            self.report(result, "Alle als gelesen markiert.");
+        }
+    }
     fn detail(&mut self, ui: &mut Ui, event: &Event) {
         let p = self.palette();
         ui.horizontal(|ui| {
-            label(ui, "DETAILS", 10.5, p.faint);
+            let (r, _) = ui.allocate_exact_size(vec2(16., 16.), Sense::hover());
+            icons::paint(ui.painter(), r, event.kind.into(), p.kind(event.kind));
+            label(ui, event.kind.short(), 12., p.kind(event.kind));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if icons::button(ui, Icon::Close, "Detailansicht schließen", p).clicked() {
                     self.selected = None;
                 }
             });
         });
-        ui.add_space(28.);
-        let (r, _) = ui.allocate_exact_size(vec2(48., 48.), Sense::hover());
-        ui.painter().rect_filled(r, 14, p.hover);
-        icons::paint(
-            ui.painter(),
-            r.shrink(12.),
-            event.kind.into(),
-            p.kind(event.kind),
-        );
-        ui.add_space(14.);
-        label(ui, event.kind.short(), 11.5, p.kind(event.kind));
-        ui.add_space(9.);
-        label(ui, &event.title, 25., p.text);
-        ui.add_space(15.);
-        label(ui, &event.repository, 12., p.muted);
-        label(
-            ui,
-            format!(
-                "@{} · {}",
-                event.actor,
-                event
-                    .occurred_at
-                    .with_timezone(&Local)
-                    .format("%d.%m. · %H:%M")
-            ),
-            11.,
-            p.faint,
-        );
-        ui.add_space(24.);
-        let max = (ui.available_height() - 170.).max(120.);
+        ui.separator();
         egui::ScrollArea::vertical()
             .id_salt("event-details")
-            .max_height(max)
+            .max_height((ui.available_height() - 48.).max(40.))
+            .auto_shrink([false, false])
             .show(ui, |ui| {
-                egui::Frame::new()
-                    .fill(p.card)
-                    .inner_margin(16)
-                    .corner_radius(12)
-                    .show(ui, |ui| {
-                        ui.set_min_width((ui.available_width() - 2.).max(100.));
-                        label(
-                            ui,
-                            if event.detail.is_empty() {
-                                "Dieses Ereignis hat keinen zusätzlichen Kommentar."
-                            } else {
-                                &event.detail
-                            },
-                            14.,
-                            p.muted,
-                        );
-                    });
+                ui.add_space(6.);
+                label(ui, &event.title, 20., p.text);
+                ui.add_space(2.);
+                label(ui, &event.repository, 12., p.muted);
+                label(
+                    ui,
+                    format!(
+                        "@{} · {}",
+                        event.actor,
+                        event
+                            .occurred_at
+                            .with_timezone(&Local)
+                            .format("%d.%m. %H:%M")
+                    ),
+                    11.,
+                    p.faint,
+                );
+                ui.add_space(10.);
+                ui.separator();
+                ui.add_space(6.);
+                label(
+                    ui,
+                    if event.detail.is_empty() {
+                        "Kein zusätzlicher Kommentar."
+                    } else {
+                        &event.detail
+                    },
+                    13.,
+                    p.text,
+                );
             });
-        ui.add_space(24.);
-        if ui
-            .add_sized(
-                [ui.available_width(), 42.],
-                egui::Button::new(RichText::new("Auf GitHub öffnen  ↗").color(p.on_accent))
-                    .fill(p.accent)
-                    .corner_radius(9),
-            )
-            .clicked()
-        {
-            self.open(&event.url);
-        }
-        if ui
-            .add_sized(
-                [ui.available_width(), 40.],
-                egui::Button::new(if event.archived {
-                    "Zurück in den Posteingang"
+        ui.separator();
+        ui.horizontal_wrapped(|ui| {
+            if primary(ui, "Auf GitHub ↗", p).clicked() {
+                self.open(&event.url);
+            }
+            if ui
+                .button(if event.archived {
+                    "Wiederherstellen"
                 } else {
                     "Erledigen"
                 })
-                .corner_radius(9),
-            )
-            .clicked()
-        {
-            self.archive(&event.id, !event.archived);
-        }
-        ui.add_space(10.);
-        label(
-            ui,
-            "Erledigen ändert nur deinen lokalen Posteingang, nicht GitHub.",
-            10.5,
-            p.faint,
-        );
-    }
-    fn settings(&mut self, ui: &mut Ui) {
-        let p = self.palette();
-        label(ui, "Einstellungen", 30., p.text);
-        ui.add_space(14.);
-        egui::ScrollArea::vertical().id_salt("settings-scroll").auto_shrink([false,false]).show(ui,|ui|{
-            let width=ui.available_width().min(740.);ui.set_max_width(width);
-            section(ui,"BENACHRICHTIGUNGSARTEN",p);
-            for (kind,help) in [(Kind::Request,"Zuweisungen und Review-Anfragen an dich oder dein Team."),(Kind::Issue,"Neue Issues in den unten eingetragenen Repositories."),(Kind::Review,"Reviews zu deinen Pull Requests."),(Kind::Mention,"Neue @Erwähnungen in Kommentaren.")]{
-                setting_toggle(ui,kind.label(),help,self.draft.rules.get_mut(kind),p,Some(kind.into()));
+                .on_hover_text("Ändert nur den lokalen Posteingang.")
+                .clicked()
+            {
+                self.archive(&event.id, !event.archived);
             }
-            section(ui,"ISSUE-REPOSITORIES",p);
-            label(ui,"Ein Repository pro Zeile: organisation/repository",12.,p.muted);
-            ui.add(egui::TextEdit::multiline(&mut self.repos_text).hint_text("organisation/design-system\norganisation/web").desired_rows(2).desired_width(f32::INFINITY).margin(vec2(14.,12.)));
-            if !self.demo && !self.config.repositories.is_empty() {
-                egui::CollapsingHeader::new("Repository-Zugriff")
-                    .default_open(self.status.repositories.iter().any(|check| check.error.is_some()) || !self.status.warnings.is_empty())
-                    .show(ui, |ui| {
-                        for repo in &self.config.repositories {
-                            let name = repo.to_string();
-                            let check = self.status.repositories.iter().find(|check| check.repository == name);
-                            let error = check.and_then(|check| check.error.as_deref()).or_else(|| self.status.warnings.iter().find(|warning| warning.starts_with(&format!("{name}:"))).map(String::as_str));
-                            let text = if error.is_some() { "Zugriff fehlgeschlagen" } else if check.is_some() { "Abruf erfolgreich" } else { "Noch nicht geprüft" };
-                            ui.horizontal_wrapped(|ui| {
-                                label(ui, &name, 12., p.text);
-                                ui.label(RichText::new(text).size(12.).color(if error.is_some() { p.danger } else { p.muted }))
-                                    .on_hover_text(error.unwrap_or("Status des letzten Issue-Abrufs."));
-                            });
-                        }
-                    });
-            }
-            section(ui,"DESKTOP-BENACHRICHTIGUNGEN",p);
-            setting_toggle(ui,"Auf dem Desktop anzeigen","Auch bei geschlossenem Fenster.",&mut self.draft.desktop_notifications,p,None);
-            setting_toggle(ui,"Inhalte in Benachrichtigungen anzeigen","Titel, Personen und Repository-Namen im System-Banner.",&mut self.draft.show_preview,p,None);
-            ui.add_space(7.);ui.horizontal_wrapped(|ui|{label(ui,"Aktualisieren alle",13.,p.muted);for(secs,title)in[(60,"1 Minute"),(120,"2 Minuten"),(300,"5 Minuten")]{ui.selectable_value(&mut self.draft.interval_secs,secs,title);}});
-            ui.add_space(8.);label(ui,"Bei GitHub-Limits verlängert sich das Abfrageintervall.",11.,p.faint);
-            ui.add_space(17.);
-            ui.horizontal_wrapped(|ui|{
-                if primary(ui,"Einstellungen speichern",p).clicked(){self.save_settings();}
-                if ui.button("Test-Benachrichtigung").clicked(){
-                    self.start_service(ui.ctx());let r=if let Some(s)=&self.store{s.put("test_notification","1")}else{Ok(())};self.report(r,if self.demo{"Demo: keine echte System-Benachrichtigung gesendet."}else{"Test-Benachrichtigung angefragt."});
-                }
-            });
-            section(ui,"GITHUB-KONTO",p);
-            egui::Frame::new().fill(p.card).stroke(Stroke::new(1.,p.border)).inner_margin(19).corner_radius(14).show(ui,|ui|{
-                ui.set_width((width-40.).max(0.));
-                if self.demo{label(ui,"@alex · Demokonto",15.,p.text);label(ui,"Die Demo greift nicht auf deinen Schlüsselbund oder auf GitHub zu.",12.,p.muted);return;}
-                label(ui,if self.config.login.is_empty(){"GitHub-Konto verbinden".into()}else{format!("Verbunden als @{}",self.config.login)},17.,p.text);
-                label(ui,"Classic Token: ausschließlich notifications; optional read:org zur Team-Erkennung.",12.,p.muted);
-                label(ui,"Tokens werden im System-Schlüsselbund gespeichert.",11.,p.faint);
-                ui.add_space(8.);
-                ui.add(egui::TextEdit::singleline(&mut self.token).password(true).hint_text(if self.config.login.is_empty(){"Classic Token einfügen …"}else{"Benachrichtigungs-Token gespeichert · leer lassen zum Behalten"}).desired_width(f32::INFINITY).margin(vec2(12.,10.)));
-                ui.add_space(10.);
-                label(ui,"Detail-Token für private Repositories",14.,p.text);
-                label(ui,"Fine-grained Token: Organisation und Repositories auswählen; Issues und Pull requests jeweils Read-only. Bei Bedarf Discussions: Read-only. Die Organisation muss den Zugriff gegebenenfalls freigeben.",12.,p.muted);
-                ui.add(egui::TextEdit::singleline(&mut self.details_token).password(true).hint_text(if self.config.has_detail_token{"Detail-Token gespeichert · leer lassen zum Behalten"}else{"Fine-grained Token einfügen …"}).desired_width(f32::INFINITY).margin(vec2(12.,10.)));
-                if ui.small_button("Fine-grained Token auf GitHub erstellen ↗").clicked(){self.open("https://github.com/settings/personal-access-tokens/new");}
-                egui::CollapsingHeader::new("Manuelle Teams").show(ui,|ui|{
-                    label(ui,"organisation/team-slug, falls read:org nicht verwendet wird.",12.,p.muted);
-                    ui.add(egui::TextEdit::multiline(&mut self.teams_text).desired_rows(2).desired_width(f32::INFINITY).hint_text("organisation/frontend"));
-                    label(ui,"Team-Liste über „Einstellungen speichern“ sichern.",11.,p.faint);
-                });
-                ui.add_space(12.);
-                ui.horizontal_wrapped(|ui|{
-                    if ui.add_enabled(self.job.is_none() && (!self.token.trim().is_empty() || (!self.config.login.is_empty() && !self.details_token.trim().is_empty())),egui::Button::new(if self.config.login.is_empty(){"Verbinden"}else{"Tokens speichern"}).fill(p.hover)).clicked(){self.account_job(false);}
-                    if ui.button("Token-Einstellungen ↗").clicked(){self.open("https://github.com/settings/tokens");}
-                    if self.job.is_some(){ui.spinner();}
-                });
-                if !self.config.login.is_empty(){
-                    ui.add_space(10.);if ui.small_button("Konto trennen und lokale Daten löschen").clicked(){self.confirm_disconnect=true;}
-                    if self.confirm_disconnect{label(ui,"Auch beide Tokens aus dem Schlüsselbund entfernen? Ein Widerruf bei GitHub ist eine separate Aktion.",12.,p.danger);ui.horizontal(|ui|{if ui.button("Ja, trennen").clicked(){self.account_job(true);self.confirm_disconnect=false;}if ui.button("Abbrechen").clicked(){self.confirm_disconnect=false;}});}
-                }
-            });
-            section(ui,"DATEN & DIAGNOSE",p);
-            label(ui,"Lokal: höchstens 500 Ereignisse / 30 Tage, unverschlüsselte Inhaltsdaten im privaten Benutzerverzeichnis. Tokens bleiben im Schlüsselbund.",12.,p.muted);
-            if let Some(paths)=&self.paths{label(ui,paths.root.display().to_string(),10.5,p.faint);}
-            if !self.demo{
-                egui::CollapsingHeader::new("Verbindungsstatus und unterstützte Ereignisse").show(ui,|ui|{
-                    label(ui,format!("{} · {} API-Aufrufe im letzten Durchlauf · {} Teams",self.status.phase,self.status.requests_last_cycle,self.status.team_count),12.,p.muted);
-                    if let Some(remaining)=self.status.remaining{label(ui,format!("Zuletzt gemeldetes API-Restbudget: {remaining}"),11.,p.faint);}
-                    for warning in &self.status.warnings{label(ui,warning,12.,p.amber);}
-                    if let Some(error)=&self.status.notification_error{label(ui,error,12.,p.danger);}
-                    if let Some(error)=&self.status.service_error{label(ui,error,12.,p.danger);}
-                    if let Some(paths)=&self.paths{label(ui,format!("Dienstprotokoll: {}",paths.log_path().display()),11.,p.faint);}
-                    label(ui,"Erwähnungen: Issues, Pull Requests, Review-Kommentare, Commits und Repository-Discussions, sofern GitHub das Thema liefert und die Leserechte reichen. Nicht: Gists, Organisations-Discussions, Projects-Boards oder GitHub Enterprise.",12.,p.muted);
-                    label(ui,"Beim ersten Import werden keine Desktop-Benachrichtigungen gesendet.",11.,p.faint);
-                    if ui.button("Hintergrunddienst beenden").clicked(){let r=self.store.as_ref().map_or(Ok(()),|s|s.request_stop());self.report(r,"Hintergrunddienst wird beendet …");}
-                });
-            }
-            if !self.demo {
-                label(ui,if self.tray_available{"Fenster schließen: Hush bleibt im Tray erreichbar."}else{"Tray nicht verfügbar. Hush kann über den Launcher erneut geöffnet werden."},11.5,p.muted);
-                if ui.button("Hush vollständig beenden").clicked(){self.quit(ui.ctx());}
-            }
-            if ui.small_button("Lokalen Verlauf leeren …").clicked(){self.confirm_clear=true;}
-            if self.confirm_clear{ui.horizontal(|ui|{if ui.button("Verlauf wirklich leeren").clicked(){let r=self.store.as_ref().map_or(Ok(()),|s|s.clear_history());if r.is_ok(){self.events.clear();}self.report(r,"Verlauf geleert. Alte Ereignisse werden nicht erneut gemeldet.");self.confirm_clear=false;}if ui.button("Abbrechen").clicked(){self.confirm_clear=false;}});}
-            ui.add_space(28.);label(ui,concat!("Hush ", env!("CARGO_PKG_VERSION")),10.,p.faint);
         });
     }
 }
@@ -1122,7 +1035,7 @@ impl eframe::App for HushApp {
         let p = self.palette();
         let rect = root.max_rect();
         root.painter().rect_filled(rect, 0, p.bg);
-        let side_width = if rect.width() < 1000. { 205. } else { 225. };
+        let side_width = if rect.width() < 840. { 56. } else { 188. };
         let side = Rect::from_min_max(rect.min, pos2(rect.left() + side_width, rect.bottom()));
         root.painter().rect_filled(side, 0, p.sidebar);
         root.painter().line_segment(
@@ -1132,22 +1045,23 @@ impl eframe::App for HushApp {
         let mut side_ui = root.new_child(
             UiBuilder::new()
                 .id_salt("sidebar")
-                .max_rect(side.shrink2(vec2(20., 20.)))
+                .max_rect(side.shrink2(vec2(8., 12.)))
                 .layout(Layout::top_down(Align::Min)),
         );
+        side_ui.set_clip_rect(side);
         self.sidebar(&mut side_ui);
         let main = Rect::from_min_max(
-            pos2(side.right() + 32., rect.top() + 22.),
-            rect.right_bottom() - vec2(30., 20.),
+            pos2(side.right() + 16., rect.top() + 12.),
+            rect.right_bottom() - vec2(16., 12.),
         );
         let selected = self
             .selected
             .as_ref()
             .and_then(|id| self.events.iter().find(|e| &e.id == id))
             .cloned();
-        let split = self.page != Page::Settings && selected.is_some() && rect.width() >= 1180.;
+        let split = self.page != Page::Settings && selected.is_some() && rect.width() >= 980.;
         let content = if split {
-            Rect::from_min_max(main.min, pos2(main.right() - 304., main.bottom()))
+            Rect::from_min_max(main.min, pos2(main.right() - 344., main.bottom()))
         } else {
             main
         };
@@ -1157,6 +1071,7 @@ impl eframe::App for HushApp {
                 .max_rect(content)
                 .layout(Layout::top_down(Align::Min)),
         );
+        ui.set_clip_rect(content);
         self.header(&mut ui);
         self.notice(&mut ui);
         if self.page == Page::Settings {
@@ -1167,11 +1082,11 @@ impl eframe::App for HushApp {
             self.inbox(&mut ui);
         }
         if split {
-            let detail = Rect::from_min_max(pos2(main.right() - 270., main.top()), main.max);
+            let detail = Rect::from_min_max(pos2(main.right() - 312., main.top()), main.max);
             root.painter().line_segment(
                 [
-                    pos2(detail.left() - 17., rect.top()),
-                    pos2(detail.left() - 17., rect.bottom()),
+                    pos2(detail.left() - 16., rect.top()),
+                    pos2(detail.left() - 16., rect.bottom()),
                 ],
                 Stroke::new(1., p.border),
             );
@@ -1181,6 +1096,7 @@ impl eframe::App for HushApp {
                     .max_rect(detail)
                     .layout(Layout::top_down(Align::Min)),
             );
+            detail_ui.set_clip_rect(detail);
             self.detail(&mut detail_ui, &selected.unwrap());
         }
         Toast::show(&mut self.message, root.ctx(), p);
@@ -1199,6 +1115,26 @@ fn repo_text(repos: &[Repo]) -> String {
         .collect::<Vec<_>>()
         .join("\n")
 }
+fn paint_elided(
+    ui: &Ui,
+    position: egui::Pos2,
+    text: &str,
+    size: f32,
+    color: egui::Color32,
+    width: f32,
+) {
+    let mut job = egui::text::LayoutJob::simple(
+        text.to_owned(),
+        FontId::proportional(size),
+        color,
+        width.max(1.),
+    );
+    job.wrap.max_rows = 1;
+    job.wrap.break_anywhere = true;
+    let galley = ui.painter().layout_job(job);
+    ui.painter().galley(position, galley, color);
+}
+
 fn nav(
     ui: &mut Ui,
     icon: Icon,
@@ -1207,39 +1143,52 @@ fn nav(
     selected: bool,
     p: Palette,
 ) -> bool {
-    let (r, response) = ui.allocate_exact_size(vec2(ui.available_width(), 40.), Sense::click());
+    let (r, response) = ui.allocate_exact_size(vec2(ui.available_width(), 30.), Sense::click());
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, text));
     if selected || response.hovered() || response.has_focus() {
         ui.painter()
-            .rect_filled(r, 8, if selected { p.hover } else { p.card });
+            .rect_filled(r, 5, if selected { p.hover } else { p.card });
     }
     let color = if selected { p.accent } else { p.muted };
+    let compact = r.width() < 100.;
+    let center = if compact {
+        r.center()
+    } else {
+        pos2(r.left() + 16., r.center().y)
+    };
     icons::paint(
         ui.painter(),
-        Rect::from_min_size(r.min + vec2(11., 11.), vec2(18., 18.)),
+        Rect::from_center_size(center, vec2(16., 16.)),
         icon,
         color,
     );
-    ui.painter().text(
-        r.min + vec2(39., 20.),
-        Align2::LEFT_CENTER,
-        text,
-        FontId::proportional(12.),
-        color,
-    );
+    if !compact {
+        paint_elided(ui, r.min + vec2(32., 7.), text, 12., color, r.width() - 52.);
+    }
     if let Some(n) = count.filter(|n| *n > 0) {
-        ui.painter().text(
-            r.right_center() - vec2(12., 0.),
-            Align2::RIGHT_CENTER,
-            n.to_string(),
-            FontId::proportional(11.),
-            p.faint,
-        );
+        if compact {
+            ui.painter()
+                .circle_filled(r.right_top() + vec2(-5., 5.), 2., p.accent);
+        } else {
+            ui.painter().text(
+                r.right_center() - vec2(8., 0.),
+                Align2::RIGHT_CENTER,
+                n.to_string(),
+                FontId::proportional(10.),
+                p.faint,
+            );
+        }
     }
     response
+        .on_hover_text(if let Some(n) = count {
+            format!("{text} · {n} ungelesen")
+        } else {
+            text.into()
+        })
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
 }
+
 fn setting_toggle(
     ui: &mut Ui,
     title: &str,
@@ -1251,32 +1200,29 @@ fn setting_toggle(
     let width = ui.available_width();
     egui::Frame::new()
         .fill(p.card)
-        .inner_margin(15)
-        .corner_radius(10)
+        .inner_margin(egui::Margin::symmetric(10, 6))
+        .corner_radius(4)
         .show(ui, |ui| {
-            ui.set_width((width - 30.).max(0.));
+            ui.set_width((width - 20.).max(0.));
             ui.horizontal(|ui| {
                 if let Some(icon) = icon {
-                    let (r, _) = ui.allocate_exact_size(vec2(20., 20.), Sense::hover());
+                    let (r, _) = ui.allocate_exact_size(vec2(16., 16.), Sense::hover());
                     icons::paint(ui.painter(), r, icon, p.muted);
                 }
-                let text_width = (ui.available_width() - 40. - ui.spacing().item_spacing.x).max(0.);
+                let text_width = (ui.available_width() - 32. - ui.spacing().item_spacing.x).max(1.);
                 ui.allocate_ui_with_layout(
-                    vec2(text_width, 34.),
-                    Layout::top_down(Align::Min),
+                    vec2(text_width, 24.),
+                    Layout::left_to_right(Align::Center),
                     |ui| {
-                        // Reserve the column even when both labels are short.
                         ui.set_width(text_width);
-                        ui.spacing_mut().item_spacing.y = 5.;
                         ui.add(
-                            egui::Label::new(RichText::new(title).size(14.).color(p.text)).wrap(),
-                        );
-                        ui.add(
-                            egui::Label::new(RichText::new(help).size(11.5).color(p.muted)).wrap(),
-                        );
+                            egui::Label::new(RichText::new(title).size(13.).color(p.text))
+                                .truncate(),
+                        )
+                        .on_hover_text(format!("{title}\n{help}"));
                     },
                 );
-                let (r, mut response) = ui.allocate_exact_size(vec2(40., 23.), Sense::click());
+                let (hit, mut response) = ui.allocate_exact_size(vec2(32., 24.), Sense::click());
                 if response.clicked() {
                     response.request_focus();
                     *value = !*value;
@@ -1285,58 +1231,86 @@ fn setting_toggle(
                 response.widget_info(|| {
                     egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, *value, title)
                 });
+                let r = Rect::from_center_size(hit.center(), vec2(32., 18.));
                 let t = ui.ctx().animate_bool(response.id, *value);
                 ui.painter()
-                    .rect_filled(r, 12, if *value { p.accent } else { p.border });
-                let x = egui::lerp((r.left() + 11.5)..=(r.right() - 11.5), t);
+                    .rect_filled(r, 9, if *value { p.accent } else { p.border });
+                let x = egui::lerp((r.left() + 9.)..=(r.right() - 9.), t);
                 ui.painter().circle_filled(
                     pos2(x, r.center().y),
-                    8.,
+                    6.,
                     if *value { p.on_accent } else { p.muted },
                 );
                 if response.has_focus() {
                     ui.painter().rect_stroke(
-                        r.expand(3.),
-                        14,
+                        r.expand(2.),
+                        10,
                         Stroke::new(1., p.accent),
                         StrokeKind::Outside,
                     );
                 }
-                response.on_hover_cursor(egui::CursorIcon::PointingHand)
+                response
+                    .on_hover_text(help)
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
             })
             .inner
         })
 }
 
-fn event_card(ui: &mut Ui, event: &Event, selected: bool, p: Palette) -> bool {
-    // Native wrapped labels determine height. The click target covers the full card.
-    let frame = egui::Frame::new()
-        .fill(if selected { p.hover } else { p.card })
-        .stroke(Stroke::new(1., if selected { p.faint } else { p.border }))
-        .corner_radius(13)
-        .inner_margin(17);
-    let inner = frame.show(ui, |ui| {
-        ui.set_min_width((ui.available_width() - 1.).max(100.));
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(15., 15.), Sense::hover());
-            icons::paint(ui.painter(), r, event.kind.into(), p.kind(event.kind));
-            label(ui, event.kind.short(), 10.5, p.kind(event.kind));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if event.unread {
-                    let (r, _) = ui.allocate_exact_size(vec2(6., 6.), Sense::hover());
-                    ui.painter().circle_filled(r.center(), 2.5, p.accent);
-                }
-                label(ui, age(event), 10.5, p.faint);
-            });
-        });
-        ui.add_space(2.);
-        ui.label(RichText::new(&event.title).size(17.).color(p.text));
-        ui.horizontal_wrapped(|ui| {
-            label(ui, &event.repository, 11.5, p.muted);
-            label(ui, format!("·  @{}", event.actor), 11.5, p.faint);
-        });
-    });
-    let response = ui.interact(inner.response.rect, ui.id().with(&event.id), Sense::click());
+fn event_card(ui: &mut Ui, event: &Event, selected: bool, p: Palette) -> egui::Response {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 62.), Sense::hover());
+    let response = ui.interact(r, ui.id().with(&event.id), Sense::click());
+    if selected || response.hovered() || response.has_focus() {
+        ui.painter()
+            .rect_filled(r, 4, if selected { p.hover } else { p.card });
+    }
+    ui.painter().line_segment(
+        [r.left_bottom(), r.right_bottom()],
+        Stroke::new(1., p.border),
+    );
+    if selected {
+        ui.painter().rect_filled(
+            Rect::from_min_size(r.min + vec2(0., 12.), vec2(2., 38.)),
+            1,
+            p.accent,
+        );
+    }
+    icons::paint(
+        ui.painter(),
+        Rect::from_min_size(r.min + vec2(12., 12.), vec2(16., 16.)),
+        event.kind.into(),
+        p.kind(event.kind),
+    );
+    paint_elided(
+        ui,
+        r.min + vec2(38., 10.),
+        &event.title,
+        14.,
+        if event.unread { p.text } else { p.muted },
+        r.width() - 120.,
+    );
+    paint_elided(
+        ui,
+        r.min + vec2(38., 35.),
+        &format!("{}  ·  @{}", event.repository, event.actor),
+        11.,
+        p.faint,
+        r.width() - 50.,
+    );
+    ui.painter().text(
+        r.right_top() + vec2(-10., 14.),
+        Align2::RIGHT_TOP,
+        age(event),
+        FontId::proportional(10.5),
+        p.faint,
+    );
+    if event.unread {
+        ui.painter()
+            .circle_filled(pos2(r.left() + 20., r.top() + 43.), 2.5, p.accent);
+    }
+    if response.clicked() {
+        response.request_focus();
+    }
     response.widget_info(|| {
         egui::WidgetInfo::labeled(
             egui::WidgetType::Button,
@@ -1344,26 +1318,25 @@ fn event_card(ui: &mut Ui, event: &Event, selected: bool, p: Palette) -> bool {
             format!("{}: {}", event.kind.short(), event.title),
         )
     });
-    if response.hovered() || response.has_focus() {
-        ui.painter().rect_stroke(
-            inner.response.rect,
-            13,
-            Stroke::new(1., p.faint),
-            StrokeKind::Inside,
-        );
-    }
     response
+        .on_hover_text(format!(
+            "{}\n{}\n{} · @{}",
+            event.kind.short(),
+            event.title,
+            event.repository,
+            event.actor
+        ))
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
 }
+
 fn age(event: &Event) -> String {
     let m = (Utc::now() - event.occurred_at).num_minutes().max(0);
     if m < 1 {
         "Gerade eben".into()
     } else if m < 60 {
-        format!("vor {m} Min.")
+        format!("{m} Min.")
     } else if m < 1440 {
-        format!("vor {} Std.", m / 60)
+        format!("{} Std.", m / 60)
     } else {
         event
             .occurred_at

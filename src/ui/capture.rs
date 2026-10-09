@@ -1,0 +1,92 @@
+//! Export the actual egui meshes and font atlas for visual review without a display server.
+use super::*;
+use eframe::App;
+use serde_json::json;
+
+#[test]
+#[ignore = "Set HUSH_UI_CAPTURE_DIR to export offline demo frames for scripts/render-ui.html"]
+fn export_native_ui_frames() {
+    let directory = std::path::PathBuf::from(std::env::var("HUSH_UI_CAPTURE_DIR").unwrap());
+    std::fs::create_dir_all(&directory).unwrap();
+    for (name, width, height, page, detail, light) in [
+        ("inbox", 1040., 720., Page::Inbox, false, false),
+        ("settings", 1040., 720., Page::Settings, false, false),
+        ("detail", 1040., 720., Page::Inbox, true, false),
+        ("inbox-small", 640., 480., Page::Inbox, false, false),
+        ("settings-small", 640., 480., Page::Settings, false, false),
+        ("detail-small", 640., 480., Page::Inbox, true, false),
+        ("inbox-light", 1040., 720., Page::Inbox, false, true),
+        ("account", 1040., 720., Page::Settings, false, false),
+        ("account-small", 640., 480., Page::Settings, false, false),
+        ("diagnostics", 640., 480., Page::Settings, false, false),
+    ] {
+        let ctx = egui::Context::default();
+        let mut app = HushApp::new(
+            &eframe::CreationContext::_new_kittest(ctx.clone()),
+            None,
+            None,
+            Config::default(),
+            true,
+            false,
+        );
+        app.page = page;
+        app.light = light;
+        theme::apply(&ctx, light);
+        if name.starts_with("account") {
+            app.settings_tab = SettingsTab::Account;
+            app.demo = false;
+            app.running = true;
+            app.status.heartbeat = Utc::now().timestamp();
+            app.status.last_sync = Some(Utc::now().timestamp());
+            app.config.login.clear();
+            app.draft = app.config.clone();
+        }
+        if name == "diagnostics" {
+            app.settings_tab = SettingsTab::Diagnostics;
+        }
+        if detail {
+            app.selected = Some(app.events[0].id.clone());
+        }
+        let mut textures = Vec::new();
+        let mut meshes = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(pos2(0., 0.), vec2(width, height))),
+                    ..Default::default()
+                },
+                |ui| app.ui(ui, &mut eframe::Frame::_new_kittest()),
+            );
+            for (id, deltas) in &output.textures_delta.set {
+                for delta in deltas {
+                    let egui::ImageData::Color(image) = &delta.image;
+                    textures.push(json!({
+                        "id": format!("{id:?}"), "size": image.size, "pos": delta.pos,
+                        "pixels": image.pixels.iter().flat_map(|p| p.to_array()).collect::<Vec<_>>()
+                    }));
+                }
+            }
+            output.textures_delta.clear();
+            meshes = ctx.tessellate(output.shapes, output.pixels_per_point).into_iter().filter_map(|primitive| {
+                let egui::epaint::Primitive::Mesh(mesh) = primitive.primitive else { return None };
+                Some(json!({
+                    "clip": [primitive.clip_rect.left(), primitive.clip_rect.top(), primitive.clip_rect.right(), primitive.clip_rect.bottom()],
+                    "texture": format!("{:?}", mesh.texture_id),
+                    "vertices": mesh.vertices.iter().map(|v| {
+                        let c = v.color.to_array();
+                        [v.pos.x, v.pos.y, v.uv.x, v.uv.y, c[0] as f32 / 255., c[1] as f32 / 255., c[2] as f32 / 255., c[3] as f32 / 255.]
+                    }).collect::<Vec<_>>(),
+                    "indices": mesh.indices
+                }))
+            }).collect();
+        }
+        std::fs::write(
+            directory.join(format!("{name}.json")),
+            serde_json::to_vec(
+                &json!({"width": width, "height": height, "textures": textures, "meshes": meshes}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    }
+}

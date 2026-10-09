@@ -31,7 +31,7 @@ impl Toast {
         let mut close = false;
         egui::Area::new(egui::Id::new("feedback-toast"))
             .order(egui::Order::Foreground)
-            .anchor(Align2::RIGHT_BOTTOM, vec2(-24., -24.))
+            .anchor(Align2::RIGHT_BOTTOM, vec2(-16., -16.))
             .interactable(true)
             .show(ctx, |ui| {
                 egui::Frame::new()
@@ -40,8 +40,8 @@ impl Toast {
                         1.,
                         if toast.error { p.danger } else { p.accent },
                     ))
-                    .corner_radius(12)
-                    .inner_margin(16)
+                    .corner_radius(8)
+                    .inner_margin(10)
                     .show(ui, |ui| {
                         ui.set_max_width((ctx.content_rect().width() - 100.).clamp(120., 440.));
                         ui.horizontal(|ui| {

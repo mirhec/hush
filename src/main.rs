@@ -111,8 +111,8 @@ fn desktop(
         viewport: egui::ViewportBuilder::default()
             .with_app_id(hush::model::APP_ID)
             .with_title(if demo { "Hush · Offline-Demo" } else { "Hush" })
-            .with_inner_size([1240., 860.])
-            .with_min_inner_size([900., 700.])
+            .with_inner_size([1040., 720.])
+            .with_min_inner_size([640., 480.])
             .with_visible(!start_hidden)
             .with_icon(hush::tray::icon()),
         renderer: eframe::Renderer::Glow,

@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Hush · native egui capture</title>
+<style>body{margin:0;background:#17191b}canvas{display:block}input{margin:12px;color:white}</style>
+<input type="file" accept=".json" aria-label="Native egui capture">
+<canvas></canvas>
+<script>
+// Render exported egui triangles and its own font atlas, not an HTML UI mockup.
+// Uses the same gamma-space multiplication and premultiplied blend as egui_glow.
+window.renderCapture = data => {
+  document.querySelector('input').hidden = true;
+  const canvas = document.querySelector('canvas');
+  canvas.width = data.width; canvas.height = data.height;
+  const gl = canvas.getContext('webgl2', {preserveDrawingBuffer:true, antialias:false});
+  if (!gl) throw Error('WebGL2 unavailable');
+  const program = gl.createProgram();
+  const shaders = [
+    [gl.VERTEX_SHADER, `#version 300 es
+      in vec2 position; in vec2 uv; in vec4 color;
+      uniform vec2 viewport; out vec2 tc; out vec4 rgba;
+      void main(){tc=uv;rgba=color;gl_Position=vec4(position.x/viewport.x*2.-1.,1.-position.y/viewport.y*2.,0.,1.);}`],
+    [gl.FRAGMENT_SHADER, `#version 300 es
+      precision highp float; in vec2 tc; in vec4 rgba;
+      uniform sampler2D atlas; out vec4 result;
+      void main(){result=rgba*texture(atlas,tc);}`]
+  ];
+  for (const [type, source] of shaders) {
+    const shader=gl.createShader(type); gl.shaderSource(shader,source); gl.compileShader(shader);
+    if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)) throw Error(gl.getShaderInfoLog(shader));
+    gl.attachShader(program,shader);
+  }
+  gl.linkProgram(program); gl.useProgram(program);
+  gl.uniform2f(gl.getUniformLocation(program,'viewport'),data.width,data.height);
+  gl.uniform1i(gl.getUniformLocation(program,'atlas'),0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA); gl.enable(gl.SCISSOR_TEST);
+  gl.viewport(0,0,data.width,data.height);
+  const textures = new Map();
+  for(const delta of data.textures) {
+    let texture=textures.get(delta.id);
+    if(!texture){texture=gl.createTexture();textures.set(delta.id,texture);}
+    gl.bindTexture(gl.TEXTURE_2D,texture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    const pixels=new Uint8Array(delta.pixels);
+    if(delta.pos) gl.texSubImage2D(gl.TEXTURE_2D,0,...delta.pos,...delta.size,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    else gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,...delta.size,0,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+  }
+  const vertices=gl.createBuffer(), indices=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,vertices);
+  for(const [name,size,offset] of [['position',2,0],['uv',2,8],['color',4,16]]) {
+    const attribute=gl.getAttribLocation(program,name);
+    gl.enableVertexAttribArray(attribute);gl.vertexAttribPointer(attribute,size,gl.FLOAT,false,32,offset);
+  }
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,indices);
+  for(const mesh of data.meshes) {
+    gl.bindTexture(gl.TEXTURE_2D,textures.get(mesh.texture));
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(mesh.vertices.flat()),gl.STREAM_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint32Array(mesh.indices),gl.STREAM_DRAW);
+    const [left,top,right,bottom]=mesh.clip;
+    gl.scissor(Math.max(0,Math.round(left)),Math.max(0,Math.round(data.height-bottom)),Math.max(0,Math.round(right-left)),Math.max(0,Math.round(bottom-top)));
+    gl.drawElements(gl.TRIANGLES,mesh.indices.length,gl.UNSIGNED_INT,0);
+  }
+  gl.finish();
+  return {width:canvas.width,height:canvas.height,error:gl.getError()};
+};
+document.querySelector('input').onchange = async event => renderCapture(JSON.parse(await event.target.files[0].text()));
+</script>

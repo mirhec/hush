@@ -26,7 +26,7 @@ GitHubs Benachrichtigungsgrund `mention` ist ausdrücklich **kein** Beweis für 
 
 ## Bedienung
 
-Posteingang mit Suche, Ereignisfiltern, Ungelesen-Ansicht, Detailbereich und lokalem Archiv. `Strg+K` / `Cmd+K` fokussiert die Suche; `Esc` schließt Details. Links werden erst auf Knopfdruck im Systembrowser geöffnet und müssen zu `https://github.com` gehören.
+Kompakter Posteingang mit zweizeiligen Einträgen, Suche, Ereignisfiltern, Ungelesen-Ansicht, Detailbereich und lokalem Archiv. Das Fenster startet mit 1040 × 720 Pixeln und lässt sich bis 640 × 480 verkleinern; dabei wird die Navigation zur Icon-Leiste. Einstellungen sind in Benachrichtigungen, Konto und Diagnose aufgeteilt. `Strg+K` / `Cmd+K` fokussiert die Suche; `Esc` schließt Details. Links werden erst auf Knopfdruck im Systembrowser geöffnet und müssen zu `https://github.com` gehören.
 
 Die normalen Einstellungen beschränken sich auf die vier Regeln, Issue-Repositories, Systembenachrichtigungen, vertrauliche Inhaltsvorschau und ein Abfrageintervall von 1/2/5 Minuten. Eine Pause hält Desktop-Benachrichtigungen für 30 Minuten zurück; die Ereignisse erscheinen weiter im Posteingang. Es gibt nach Ende der Pause keine nachträgliche Bannerflut. Die Hell-/Dunkel-Auswahl gilt in 0.1 für die laufende Fenstersitzung.
 
