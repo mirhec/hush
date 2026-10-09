@@ -5,6 +5,23 @@ results describe the code and environment at that time, including features that
 have since changed. They are not a claim that every check was rerun against the
 latest revision.
 
+## Recent inbox and separate GitHub action
+
+- **81 Rust tests passed** with `cargo test --locked --offline --all-targets`.
+  Regression coverage includes the 20 newest matching entries regardless of read
+  state, optional unread filtering, row clicks persisting read state without a
+  browser call, separate GitHub clicks at 360/440 pixels, failed or unsafe links,
+  and Tab/Enter/Space navigation of the independent row and GitHub actions.
+- Clippy passed with the same five existing suggestions outside this change.
+  The local Linux release build passed.
+- Native egui captures were exported separately. The default 440 × 640 inbox,
+  filter menu, and 360 × 480 hover action were inspected; the corresponding
+  [screenshots](DESIGN.md#checking-the-layout) were updated.
+
+Browser calls in interaction tests are substituted; this does not verify an
+actual system-browser launch. The isolated D-Bus test remains skipped locally.
+No native Windows/macOS interaction or installer build was run for this change.
+
 ## OAuth browser login and English documentation
 
 - **78 Rust tests passed** with `cargo test --locked --offline --all-targets`,

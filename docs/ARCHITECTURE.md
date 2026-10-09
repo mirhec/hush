@@ -43,9 +43,9 @@ Read state is entirely local. A newer delivery gets its own event entry. Hush do
 
 ## Inbox and navigation
 
-The UI consists of an inbox list with search and a filter menu. The window starts at 440 × 640 pixels, with a minimum size of 360 × 480. The unread filter is enabled when the app opens. The menu also lets users select all event types or one specific type, and mark the entire history as read.
+The UI consists of an inbox list with search and a filter menu. The window starts at 440 × 640 pixels, with a minimum size of 360 × 480. The list shows the 20 newest matching entries, including read entries, when the app opens. Unread-only filtering is optional and disabled by default. Search and event-type filters are applied before sorting by event time and limiting the results. The menu also lets users select all event types or one specific type, and mark the entire history as read.
 
-Clicking an entry validates its GitHub link and passes it to the system browser. The local read state is saved and the list updated only after a successful browser invocation. If opening fails, the entry remains unread and a toast reports the error. A successful invocation confirms the handoff to the browser, not that the GitHub page loaded.
+Clicking an entry saves its local read state without opening the browser. A separate GitHub button appears on hover or keyboard focus. That action validates the GitHub link and passes it to the system browser, then saves the read state after a successful invocation. If opening fails, an unread entry remains unread and a toast reports the error. A successful invocation confirms the handoff to the browser, not that the GitHub page loaded.
 
 The gear icon in the upper right opens settings with the “Benachrichtigungen” (notifications), “Konto” (account), and “Diagnose” (diagnostics) tabs. `Ctrl+K` / `Cmd+K` focuses search; `Esc` closes the filter menu or returns from settings to the inbox. The UI has no separate detail view, sidebar, or archive view.
 

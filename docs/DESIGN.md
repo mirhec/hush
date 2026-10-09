@@ -4,7 +4,7 @@ Hush displays GitHub notifications as a single chronological inbox list. The win
 
 ## Visual system
 
-Neutral graphite backgrounds use mint for selection, focus, and received reviews. Purple identifies pull request requests, amber identifies mentions, and blue identifies new issues. Dedicated vector icons and labels supplement color. The light theme uses light gray surfaces with the same semantic colors.
+Neutral graphite backgrounds use mint for selection, focus, and received reviews. Purple identifies PR assignments and review requests, amber identifies mentions, and blue identifies new issues. Each action has its own vector icon: issue creation, PR assignment or review request, submitted PR review, and mention. Labels supplement the icons and color. The light theme uses light gray surfaces with the same semantic colors.
 
 The header contains the inbox title, unread count, and settings icon on the right. Search and the filter button sit side by side below it. Each list row is 56 pixels high: the title appears above the repository, person, and time. The event icon and unread indicator sit on the left. Long text is truncated; a tooltip shows the full title. Headings use 18-pixel text, list titles 13, and metadata 11. Thin lines separate entries.
 
@@ -12,7 +12,9 @@ Custom vector icons are drawn with the egui painter. Native text uses the defaul
 
 ## Interaction
 
-Only unread notifications appear by default. The filter menu lets users disable “Ungelesen” (unread) and filter by event type. Search covers the title, repository, person, and content. “Alle als gelesen markieren” (mark all as read) applies to the entire local history. Clicking an entry opens it directly on GitHub and marks it as read locally after a successful handoff to the browser. If the handoff fails, the entry remains unread and a toast shows the error. Entries archived by earlier versions remain accessible as read history.
+The inbox shows the 20 newest entries by default, including read notifications. The filter menu offers optional “Ungelesen” (unread) filtering, initially off, and filters by event type. Search covers the title, repository, person, and content. The list displays at most the 20 newest matches after applying search and filters. “Alle als gelesen markieren” (mark all as read) applies to the entire local history. Entries archived by earlier versions remain accessible as read history.
+
+Clicking a row marks the entry as read locally without opening the browser. Hovering over a row reveals a separate GitHub button. The button is also reachable with the keyboard and visible when focused. It opens the entry in the system browser and marks it as read locally after a successful handoff. If the handoff fails, an unread entry stays unread and a toast shows the error.
 
 Ctrl/Cmd+K focuses search. Escape closes the filter menu or returns from settings to the inbox. The back arrow in settings performs the same navigation. Unsaved settings are retained when switching views.
 
@@ -24,7 +26,7 @@ The [OAuth confirmation screen](screenshots/oauth-account.png) shows the browser
 
 ## Checking the layout
 
-The [inbox](screenshots/compact-inbox.png), [filter menu](screenshots/inbox-filters.png), and [small settings window](screenshots/compact-settings-small.png) images show actual egui drawing data with demo content. They were rendered without a desktop session from egui triangles and the corresponding font atlas. They demonstrate the layout, not native operating system interaction.
+The [inbox](screenshots/compact-inbox.png), [filter menu](screenshots/inbox-filters.png), [GitHub hover action at 360 pixels](screenshots/inbox-hover-small.png), and [small settings window](screenshots/compact-settings-small.png) images show actual egui drawing data with demo content. They were rendered without a desktop session from egui triangles and the corresponding font atlas. They demonstrate the layout, not native operating system interaction.
 
 ```sh
 HUSH_UI_CAPTURE_DIR=/tmp/hush-ui cargo test --locked --lib export_native_ui_frames -- --ignored

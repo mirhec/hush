@@ -4,9 +4,10 @@ use eframe::egui::{self, Color32, Painter, Rect, Stroke, pos2};
 #[derive(Clone, Copy)]
 pub enum Icon {
     Back,
-    Branch,
-    Issue,
-    Check,
+    IssueOpened,
+    ReviewRequested,
+    ReviewSubmitted,
+    ExternalLink,
     Mention,
     Settings,
     Sun,
@@ -15,9 +16,9 @@ pub enum Icon {
 impl From<Kind> for Icon {
     fn from(k: Kind) -> Self {
         match k {
-            Kind::Request => Self::Branch,
-            Kind::Issue => Self::Issue,
-            Kind::Review => Self::Check,
+            Kind::Request => Self::ReviewRequested,
+            Kind::Issue => Self::IssueOpened,
+            Kind::Review => Self::ReviewSubmitted,
             Kind::Mention => Self::Mention,
         }
     }
@@ -46,22 +47,39 @@ pub fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Back => {
             path(&[(14., 5.), (7., 12.), (14., 19.)]);
         }
-        Icon::Branch => {
-            circle(6., 5., 2.5);
-            circle(6., 19., 2.5);
-            circle(18., 19., 2.5);
-            line((6., 7.5), (6., 16.5));
-            path(&[(18., 16.), (18., 10.), (16., 7.), (12., 7.)]);
-            path(&[(14., 4.), (11., 7.), (14., 10.)]);
+        Icon::IssueOpened => {
+            // Leave the upper-right arc open for the creation marker.
+            let arc: Vec<_> = (0..=28)
+                .map(|step| {
+                    let angle = (20. + step as f32 * 260. / 28.).to_radians();
+                    v(11. + 8. * angle.cos(), 13. + 8. * angle.sin())
+                })
+                .collect();
+            p.add(egui::Shape::line(arc, s));
+            p.circle_filled(v(11., 13.), 1.4 * rect.width() / 24., color);
+            line((19., 2.), (19., 10.));
+            line((15., 6.), (23., 6.));
         }
-        Icon::Issue => {
-            circle(12., 12., 8.5);
-            line((12., 7.), (12., 12.));
-            p.circle_filled(v(12., 16.), 1.0, color);
+        Icon::ReviewRequested => {
+            circle(5., 5., 2.5);
+            circle(5., 19., 2.5);
+            circle(19., 19., 2.5);
+            line((5., 7.5), (5., 16.5));
+            path(&[(19., 16.5), (19., 9.), (17., 6.), (12., 6.)]);
+            path(&[(15., 3.), (12., 6.), (15., 9.)]);
         }
-        Icon::Check => {
-            circle(12., 12., 8.5);
-            path(&[(7.5, 12.), (10.5, 15.), (16.5, 9.)]);
+        Icon::ReviewSubmitted => {
+            circle(5., 5., 2.5);
+            circle(5., 19., 2.5);
+            line((5., 7.5), (5., 16.5));
+            path(&[(19., 10.), (19., 8.), (17., 5.), (12., 5.)]);
+            path(&[(14., 3.), (12., 5.), (14., 7.)]);
+            path(&[(12., 17.), (15.5, 20.5), (22., 13.5)]);
+        }
+        Icon::ExternalLink => {
+            path(&[(10., 4.), (4., 4.), (4., 20.), (20., 20.), (20., 14.)]);
+            path(&[(14., 3.), (21., 3.), (21., 10.)]);
+            line((11., 13.), (21., 3.));
         }
         Icon::Mention => {
             circle(11., 12., 4.);

@@ -42,15 +42,19 @@ comment again does not produce another banner.
 ## Using Hush
 
 The window starts at **440 × 640 pixels** and can shrink to **360 × 480**. The
-inbox shows only unread notifications by default. Beside search, **Filter** opens
-the menu for unread-only filtering (`"Ungelesen"`), all or individual event types,
-and marking everything as read (`"Alle als gelesen markieren"`). Turn off the
-unread-only filter to show read history as well.
+inbox shows the **20 newest entries**, including read notifications. Beside
+search, **Filter** opens the menu for optional unread-only filtering
+(`"Ungelesen"`), all or individual event types, and marking everything as read
+(`"Alle als gelesen markieren"`). Unread-only filtering is off by default.
+Search and filters show at most the 20 newest matching entries.
 
-Clicking an entry opens it directly on GitHub in the system browser. Hush marks
-it as read locally only after the browser call succeeds. If opening fails, the
-entry remains unread and a notice appears. Only `https://github.com` links are
-accepted.
+Each entry has an icon for its action: a new issue, a PR assignment or review
+request, a submitted PR review, or a mention. Clicking the row marks it as read
+locally. A separate button appears when hovering over the row or focusing the
+button with the keyboard; it opens the entry on GitHub in the system browser.
+Hush also marks the entry as read after a successful browser handoff. If opening
+fails, an unread entry stays unread and a notice appears. Only
+`https://github.com` links are accepted.
 
 The gear at the top right opens settings with notifications, account, and
 diagnostics tabs. `Ctrl+K` / `Cmd+K` switches to search; `Esc` closes the filter
@@ -62,9 +66,9 @@ back desktop notifications for 30 minutes while events continue to appear in the
 inbox. There is no burst of delayed banners when the pause ends. The light/dark
 selection applies to the current window session.
 
-The initial sync imports at most the last 24 hours **without banners**. Visible
-history is limited to 500 entries or 30 days. Older deduplication IDs are retained
-for up to 90 days.
+The initial sync imports at most the last 24 hours **without banners**. Stored
+history is limited to 500 entries or 30 days; the list displays the 20 newest
+matches. Older deduplication IDs are retained for up to 90 days.
 
 **Read state is local:** Hush does not modify issues, PRs, or GitHub read state.
 Multiple computers have independent inboxes and may show separate banners for
