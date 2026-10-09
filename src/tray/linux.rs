@@ -30,6 +30,7 @@ impl Default for Model {
     fn default() -> Self {
         Self {
             state: State {
+                language: crate::i18n::Language::System.resolved(),
                 running: false,
                 paused: false,
                 unread: 0,
@@ -41,16 +42,7 @@ impl Default for Model {
 }
 impl Model {
     fn title(&self) -> String {
-        let phase = if !self.state.running {
-            "Dienst inaktiv"
-        } else if self.state.paused {
-            "Pausiert"
-        } else if self.state.warning {
-            "Verbindung prüfen"
-        } else {
-            "Aktiv"
-        };
-        format!("Hush · {phase} · {} ungelesen", self.state.unread)
+        self.state.title()
     }
     fn properties(&self, id: i32, names: &[String]) -> Option<Properties> {
         let mut props = Properties::new();
@@ -75,7 +67,7 @@ impl Model {
                     9 => "Hush beenden",
                     _ => unreachable!(),
                 };
-                set("label", label.to_variant());
+                set("label", self.state.language.text(label).to_variant());
                 set("enabled", self.enabled(id).to_variant());
             }
             _ => return None,
@@ -543,6 +535,34 @@ mod tests {
                 call_bus("ReleaseName", &(name,).to_variant());
             })
             .unwrap();
+    }
+
+    #[test]
+    fn changing_language_updates_existing_tray_labels_and_status() {
+        use crate::i18n::Language;
+        let mut model = Model::default();
+        model.state.language = Language::De;
+        model.state.running = true;
+        model.state.unread = 12;
+        let label = |model: &Model, id| {
+            model.properties(id, &[]).unwrap()["label"]
+                .get::<String>()
+                .unwrap()
+        };
+        assert_eq!(label(&model, 4), "Einstellungen");
+        assert_eq!(model.title(), "Hush · Aktiv · 12 ungelesen");
+        let old_state = model.state.clone();
+        model.state.language = Language::En;
+        assert!(old_state != model.state);
+        assert_eq!(label(&model, 4), "Settings");
+        assert_eq!(label(&model, 6), "Pause for 30 minutes");
+        assert_eq!(model.title(), "Hush · Active · 12 unread");
+        model.state.paused = true;
+        assert_eq!(label(&model, 6), "Resume notifications");
+        assert_eq!(model.title(), "Hush · Paused · 12 unread");
+        model.state.language = Language::Ja;
+        assert_eq!(label(&model, 3), Language::Ja.text("Hush öffnen"));
+        assert_eq!(label(&model, 9), Language::Ja.text("Hush beenden"));
     }
 
     #[test]

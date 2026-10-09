@@ -38,7 +38,9 @@
         "install -Dm644 packaging/flatpak/io.hush.github.desktop /app/share/applications/io.hush.github.desktop",
         "install -Dm644 packaging/flatpak/io.hush.github.metainfo.xml /app/share/metainfo/io.hush.github.metainfo.xml",
         "install -Dm644 assets/io.hush.github.svg /app/share/icons/hicolor/scalable/apps/io.hush.github.svg",
-        "install -Dm644 LICENSE /app/share/licenses/hush/LICENSE"
+        "install -Dm644 LICENSE /app/share/licenses/hush/LICENSE",
+        "install -Dm644 assets/fonts/OFL.txt /app/share/licenses/hush/fonts/OFL.txt",
+        "install -Dm644 assets/fonts/README.md /app/share/licenses/hush/fonts/README.md"
       ],
       "sources": [{"type": "dir", "path": "source"}]
     }

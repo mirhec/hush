@@ -8,6 +8,11 @@ $Destination = Join-Path $env:LOCALAPPDATA 'Programs\Hush'
 New-Item -ItemType Directory -Path $Destination -Force | Out-Null
 Copy-Item -LiteralPath $Binary -Destination (Join-Path $Destination 'hush.exe') -Force
 Copy-Item -LiteralPath (Join-Path $Root 'assets\hush.ico') -Destination $Destination -Force
+$FontLicenses = Join-Path $Destination 'licenses\fonts'
+New-Item -ItemType Directory -Path $FontLicenses -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $Root 'LICENSE') -Destination $Destination -Force
+Copy-Item -LiteralPath (Join-Path $Root 'assets\fonts\OFL.txt') -Destination $FontLicenses -Force
+Copy-Item -LiteralPath (Join-Path $Root 'assets\fonts\README.md') -Destination $FontLicenses -Force
 $Executable = Join-Path $Destination 'hush.exe'
 $Icon = Join-Path $Destination 'hush.ico'
 $AppId = 'io.hush.github'

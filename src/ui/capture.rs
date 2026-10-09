@@ -8,7 +8,7 @@ use serde_json::json;
 fn export_native_ui_frames() {
     let directory = std::path::PathBuf::from(std::env::var("HUSH_UI_CAPTURE_DIR").unwrap());
     std::fs::create_dir_all(&directory).unwrap();
-    for (name, width, height, page, filters, light) in [
+    let cases = vec![
         ("inbox", 440., 640., Page::Inbox, false, false),
         ("inbox-all", 440., 640., Page::Inbox, false, false),
         ("inbox-hover", 440., 640., Page::Inbox, false, false),
@@ -23,7 +23,25 @@ fn export_native_ui_frames() {
         ("account-oauth", 360., 480., Page::Settings, false, false),
         ("account-small", 360., 480., Page::Settings, false, false),
         ("diagnostics", 360., 480., Page::Settings, false, false),
-    ] {
+    ];
+    let mut cases: Vec<_> = cases
+        .into_iter()
+        .map(|(name, width, height, page, filters, light)| {
+            (name.to_owned(), width, height, page, filters, light)
+        })
+        .collect();
+    for locale in ["en", "de", "es", "fr", "pt", "zh", "ja"] {
+        for (screen, page) in [
+            ("inbox", Page::Inbox),
+            ("settings", Page::Settings),
+            ("account", Page::Settings),
+            ("empty", Page::Inbox),
+        ] {
+            let name = format!("{locale}-{screen}");
+            cases.push((name, 360., 480., page, false, false));
+        }
+    }
+    for (name, width, height, page, filters, light) in cases {
         let ctx = egui::Context::default();
         let mut app = HushApp::new(
             &eframe::CreationContext::_new_kittest(ctx.clone()),
@@ -34,11 +52,30 @@ fn export_native_ui_frames() {
             false,
         );
         app.page = page;
+        let language = name
+            .split_once('-')
+            .map(|(code, _)| Language::from_locale(code))
+            .unwrap_or(Language::De);
+        let language = if name.starts_with("en-")
+            || name.starts_with("de-")
+            || name.starts_with("es-")
+            || name.starts_with("fr-")
+            || name.starts_with("pt-")
+            || name.starts_with("zh-")
+            || name.starts_with("ja-")
+        {
+            language
+        } else {
+            Language::De
+        };
+        app.config.language = language;
+        app.draft.language = language;
+        theme::fonts(&ctx, language);
         app.light = light;
         theme::apply(&ctx, light);
         // Capture settled popup opacity, independent of rendering speed.
         ctx.global_style_mut(|style| style.animation_time = 0.);
-        if name.starts_with("account") {
+        if name.starts_with("account") || name.ends_with("-account") {
             app.settings_tab = SettingsTab::Account;
             app.demo = false;
             app.running = true;
@@ -47,7 +84,7 @@ fn export_native_ui_frames() {
             app.config.login.clear();
             app.draft = app.config.clone();
         }
-        if name == "account-oauth" {
+        if name == "account-oauth" || name.ends_with("-account") {
             let (_send, events) = mpsc::channel();
             app.oauth_login = Some(OAuthLogin {
                 events,
@@ -62,6 +99,9 @@ fn export_native_ui_frames() {
         }
         if name == "inbox-all" {
             app.unread_only = false;
+        }
+        if name.ends_with("-empty") {
+            app.events.clear();
         }
         if filters {
             egui::Popup::open_id(&ctx, filter_popup_id());

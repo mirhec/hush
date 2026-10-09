@@ -183,6 +183,19 @@ impl Store {
             next
         })
     }
+    /// Appearance changes save immediately without committing unrelated settings drafts.
+    pub fn save_appearance(
+        &mut self,
+        language: crate::i18n::Language,
+        light_theme: bool,
+    ) -> Result<Config> {
+        self.update_config(|current| {
+            let mut next = current.clone();
+            next.language = language;
+            next.light_theme = light_theme;
+            next
+        })
+    }
     /// UI and tray toggles always use the latest stored state, never a snapshot.
     pub fn toggle_pause(&mut self) -> Result<Config> {
         self.update_config(|current| {
@@ -426,9 +439,29 @@ impl Store {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let previous: Option<String> = tx
+            .query_row("SELECT value FROM kv WHERE key='config'", [], |row| {
+                row.get(0)
+            })
+            .optional()?;
+        let previous: Config = previous
+            .map(|raw| serde_json::from_str(&raw))
+            .transpose()?
+            .unwrap_or_default();
+        // Language and theme belong to the app; account-specific settings are cleared.
+        let reset = Config {
+            language: previous.language,
+            light_theme: previous.light_theme,
+            revision: previous.revision.saturating_add(1),
+            ..Default::default()
+        };
         tx.execute_batch("DELETE FROM events; DELETE FROM tasks; DELETE FROM seen; DELETE FROM kv WHERE key LIKE 'cursor:%'; DELETE FROM kv WHERE key='config';")?;
+        tx.execute(
+            "INSERT INTO kv(key,value) VALUES('config',?1)",
+            [serde_json::to_string(&reset)?],
+        )?;
+        tx.execute("INSERT INTO kv(key,value) VALUES('refresh','1') ON CONFLICT(key) DO UPDATE SET value='1'", [])?;
         tx.commit()?;
-        self.put("refresh", "1")?;
         Ok(())
     }
     fn prune(&self) -> Result<()> {
@@ -480,6 +513,43 @@ mod tests {
         let serialized = serde_json::to_string(&Config::default())?;
         assert!(!serialized.contains("ghp_"));
         assert!(!serialized.contains("password"));
+        Ok(())
+    }
+
+    #[test]
+    fn appearance_changes_preserve_account_preferences_and_pause() -> Result<()> {
+        use crate::i18n::Language;
+        let legacy: Config = serde_json::from_str(r#"{"login":"alice"}"#)?;
+        assert_eq!(legacy.language, Language::System);
+        assert!(!legacy.light_theme);
+        let temporary = tempfile::tempdir()?;
+        let paths = Paths::at(temporary.path().join("data"))?;
+        let mut store = Store::open(&paths)?;
+        let original = store.save_config(&Config {
+            login: "alice".into(),
+            oauth: true,
+            paused_until: Utc::now().timestamp() + 1800,
+            interval_secs: 300,
+            ..Default::default()
+        })?;
+        store.save_appearance(Language::Ja, true)?;
+        let saved = Store::open(&paths)?.config()?;
+        assert_eq!(saved.language, Language::Ja);
+        assert!(saved.light_theme && saved.oauth);
+        assert_eq!(saved.login, original.login);
+        assert_eq!(saved.paused_until, original.paused_until);
+        assert_eq!(saved.interval_secs, 300);
+        let mut stale_account = original;
+        stale_account.login = "alice".into();
+        let saved = store.save_account(&stale_account)?;
+        assert_eq!(saved.language, Language::Ja);
+        assert!(saved.light_theme);
+        store.disconnect()?;
+        let disconnected = Store::open(&paths)?.config()?;
+        assert!(disconnected.login.is_empty() && !disconnected.oauth);
+        assert_eq!(disconnected.language, Language::Ja);
+        assert!(disconnected.light_theme);
+        assert_eq!(disconnected.paused_until, 0);
         Ok(())
     }
 

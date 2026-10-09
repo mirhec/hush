@@ -382,7 +382,9 @@ fn run_loop(paths: &Paths, store: &mut Store) -> Result<()> {
             return Ok(());
         }
         if store.take_flag("test_notification")? {
-            status.notification_error = notify::test().err().map(|e| e.to_string());
+            status.notification_error = notify::test_with_language(store.config()?.language)
+                .err()
+                .map(|e| e.to_string());
             store.save_status(&status)?;
         }
         let cfg = store.config()?;

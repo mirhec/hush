@@ -47,7 +47,17 @@ The UI consists of an inbox list with search and a filter menu. The window start
 
 Clicking an entry saves its local read state without opening the browser. A separate GitHub button appears on hover or keyboard focus. That action validates the GitHub link and passes it to the system browser, then saves the read state after a successful invocation. If opening fails, an unread entry remains unread and a toast reports the error. A successful invocation confirms the handoff to the browser, not that the GitHub page loaded.
 
-The gear icon in the upper right opens settings with the “Benachrichtigungen” (notifications), “Konto” (account), and “Diagnose” (diagnostics) tabs. `Ctrl+K` / `Cmd+K` focuses search; `Esc` closes the filter menu or returns from settings to the inbox. The UI has no separate detail view, sidebar, or archive view.
+The gear icon in the upper right opens settings with notifications, account, and diagnostics tabs. `Ctrl+K` / `Cmd+K` focuses search; `Esc` closes the filter menu or returns from settings to the inbox. The UI has no separate detail view, sidebar, or archive view.
+
+## Localization and appearance
+
+`src/i18n.rs` embeds the seven JSON catalogs in `src/locales/`: German, English, Spanish, French, Brazilian Portuguese, Simplified Chinese, and Japanese. Existing application messages serve as stable lookup keys. Every catalog uses the same keys and format placeholders. Interpolation runs once, so braces inside inserted values cannot become new placeholders. Known application diagnostics, including messages persisted by older versions, are translated at display time; unknown messages and interpolated values stay unchanged. GitHub content and user input are never passed through diagnostic translation.
+
+`Config.language` defaults to `System`, including when older stored configurations lack the field. System language detection uses `sys-locale` and matches the primary language code. Portuguese locales use the Brazilian Portuguese catalog; Chinese locales use Simplified Chinese. Unsupported or unavailable system locales fall back to English. A language override in settings is stored alongside `Config.light_theme` and applied immediately. `Store::save_appearance` updates only these two fields in a transaction without saving unrelated settings drafts. Notification preferences still use the explicit save action.
+
+The selected language also travels with tray state and notification configuration. Existing tray menus update their labels when the language changes, and the worker reads the language for subsequent desktop notifications. Notification headings and private summary text are localized; any enabled preview retains the original GitHub title, repository, and actor. Language changes do not change event identity, stored read state, filtering, or the 20-entry inbox limit.
+
+egui keeps its default Latin fonts and adds a bundled CJK fallback. The Japanese locale selects Japanese glyph forms; other locales use the Simplified Chinese face. Both modified Noto Sans CJK subsets are compiled into the executable, totaling about 9.6 MiB of font source assets. They cover the translation catalogs, native language names, common Han characters, kana, and related punctuation; they are not complete Unicode fonts. No runtime font download or system font lookup is needed. [Font provenance, coverage, and reproducible subset generation](../assets/fonts/README.md) are documented separately. Installers include the font attribution and SIL Open Font License in addition to the application license.
 
 ## Errors and limits
 

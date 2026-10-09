@@ -1,4 +1,5 @@
 use super::theme::Palette;
+use crate::i18n::Language;
 use eframe::egui::{self, Align2, RichText, Stroke, vec2};
 use std::time::{Duration, Instant};
 
@@ -17,11 +18,22 @@ impl Toast {
         }
     }
 
-    pub(super) fn show(current: &mut Option<Self>, ctx: &egui::Context, p: Palette) {
-        Self::show_at(current, ctx, p, Instant::now());
+    pub(super) fn show(
+        current: &mut Option<Self>,
+        ctx: &egui::Context,
+        p: Palette,
+        language: Language,
+    ) {
+        Self::show_at(current, ctx, p, Instant::now(), language);
     }
 
-    fn show_at(current: &mut Option<Self>, ctx: &egui::Context, p: Palette, now: Instant) {
+    fn show_at(
+        current: &mut Option<Self>,
+        ctx: &egui::Context,
+        p: Palette,
+        now: Instant,
+        language: Language,
+    ) {
         let Some(toast) = current else { return };
         if now >= toast.expires {
             *current = None;
@@ -49,11 +61,14 @@ impl Toast {
                             let width = (ui.available_width() - 35.).max(0.);
                             ui.add_sized(
                                 [width, 0.],
-                                egui::Label::new(RichText::new(&toast.text).color(p.text)).wrap(),
+                                egui::Label::new(
+                                    RichText::new(language.message(&toast.text)).color(p.text),
+                                )
+                                .wrap(),
                             );
                             close = ui
                                 .small_button("×")
-                                .on_hover_text("Hinweis schließen")
+                                .on_hover_text(language.text("Hinweis schließen"))
                                 .clicked();
                         });
                     });
@@ -82,12 +97,19 @@ mod tests {
                     ui.ctx(),
                     Palette::dark(),
                     expires - Duration::from_millis(1),
+                    Language::De,
                 );
             });
             output.textures_delta.clear();
             assert!(current.is_some());
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                Toast::show_at(&mut current, ui.ctx(), Palette::dark(), expires);
+                Toast::show_at(
+                    &mut current,
+                    ui.ctx(),
+                    Palette::dark(),
+                    expires,
+                    Language::De,
+                );
             });
             output.textures_delta.clear();
             assert!(current.is_none());

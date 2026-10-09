@@ -5,6 +5,16 @@ results describe the code and environment at that time, including features that
 have since changed. They are not a claim that every check was rerun against the
 latest revision.
 
+## Multilingual UI and appearance
+
+- **92 Rust tests passed** with `cargo test --locked --offline --all-targets`, including seven-language catalog/placeholder coverage, safe diagnostic translation, persisted appearance without saving unrelated drafts, language changes in tray menus, notification preview privacy, and narrow translated settings with CJK glyph coverage.
+- **10 packaging tests passed**; shell syntax and documentation links were checked. The CJK fonts are bundled, and their OFL license/attribution is included in native packages.
+- Clippy passed with the five existing suggestions outside the localization work. The Linux release build passed; core tests also run without the desktop feature.
+- The font subset script regenerated both fonts byte-for-byte; common Han characters, kana, punctuation, and all catalog characters were verified.
+- Native egui captures covered all seven languages at 360 × 480. Visual inspection included German/English inboxes, Portuguese/Japanese settings, French/Chinese device sign-in, and the light theme.
+
+These checks use synthetic inbox data and rendered egui drawing data. They do not demonstrate native Windows/macOS installers, OS language detection on those systems, real desktop notification delivery, or a live browser sign-in. The isolated D-Bus test remains skipped locally.
+
 ## Recent inbox and separate GitHub action
 
 - **81 Rust tests passed** with `cargo test --locked --offline --all-targets`.

@@ -8,6 +8,8 @@ pub enum Icon {
     ReviewRequested,
     ReviewSubmitted,
     ExternalLink,
+    Search,
+    Inbox,
     Mention,
     Settings,
     Sun,
@@ -46,6 +48,26 @@ pub fn paint(p: &Painter, rect: Rect, icon: Icon, color: Color32) {
     match icon {
         Icon::Back => {
             path(&[(14., 5.), (7., 12.), (14., 19.)]);
+        }
+        Icon::Search => {
+            circle(10., 10., 6.);
+            line((14.5, 14.5), (21., 21.));
+        }
+        Icon::Inbox => {
+            path(&[
+                (3., 14.),
+                (6., 5.),
+                (18., 5.),
+                (21., 14.),
+                (21., 20.),
+                (3., 20.),
+                (3., 14.),
+                (8., 14.),
+                (10., 17.),
+                (14., 17.),
+                (16., 14.),
+                (21., 14.),
+            ]);
         }
         Icon::IssueOpened => {
             // Leave the upper-right arc open for the creation marker.

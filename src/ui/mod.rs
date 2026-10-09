@@ -11,6 +11,7 @@ mod toast;
 use crate::{
     engine,
     filter::safe_web_url,
+    i18n::Language,
     model::{Config, Event, Kind, Repo, RuntimeStatus},
     oauth,
     storage::{Paths, Store},
@@ -109,8 +110,9 @@ impl HushApp {
         demo: bool,
         start_hidden: bool,
     ) -> Self {
-        theme::apply(&cc.egui_ctx, false);
         let cfg = if demo { demo::config() } else { config };
+        theme::apply(&cc.egui_ctx, cfg.light_theme);
+        theme::fonts(&cc.egui_ctx, cfg.language.resolved());
         let events = if demo {
             demo::events()
         } else {
@@ -147,7 +149,7 @@ impl HushApp {
             teams_text: repo_text(&cfg.manual_teams),
             token: String::new(),
             details_token: String::new(),
-            light: false,
+            light: cfg.light_theme,
             message: None,
             job: None,
             oauth_login: None,
@@ -186,6 +188,33 @@ impl HushApp {
             Palette::light()
         } else {
             Palette::dark()
+        }
+    }
+    fn language(&self) -> Language {
+        self.config.language.resolved()
+    }
+    fn save_appearance(&mut self, language: Language, light: bool, ctx: &egui::Context) {
+        let result = if let Some(store) = &mut self.store {
+            store.save_appearance(language, light)
+        } else {
+            let mut config = self.config.clone();
+            config.language = language;
+            config.light_theme = light;
+            Ok(config)
+        };
+        match result {
+            Ok(config) => {
+                let changed_language = self.config.language != config.language;
+                self.config = config;
+                self.draft.language = self.config.language;
+                self.draft.light_theme = self.config.light_theme;
+                self.light = self.config.light_theme;
+                theme::apply(ctx, self.light);
+                if changed_language {
+                    theme::fonts(ctx, self.language());
+                }
+            }
+            Err(error) => self.message = Some(Toast::new(error.to_string(), true)),
         }
     }
     fn reset_draft(&mut self) {
@@ -262,6 +291,13 @@ impl HushApp {
                     self.job = None;
                     match result {
                         Ok(cfg) => {
+                            if self.config.language != cfg.language {
+                                theme::fonts(ctx, cfg.language.resolved());
+                            }
+                            if self.light != cfg.light_theme {
+                                self.light = cfg.light_theme;
+                                theme::apply(ctx, self.light);
+                            }
                             self.config = cfg;
                             self.reset_draft();
                             self.page = if self.config.login.is_empty() {
@@ -328,6 +364,15 @@ impl HushApp {
                 // Reload on every platform, including when a keyring cleanup failed after
                 // an account change had already been committed to SQLite.
                 if let Ok(config) = store.config() {
+                    if self.config.language != config.language {
+                        theme::fonts(ctx, config.language.resolved());
+                    }
+                    if self.light != config.light_theme {
+                        self.light = config.light_theme;
+                        theme::apply(ctx, self.light);
+                    }
+                    self.draft.language = config.language;
+                    self.draft.light_theme = config.light_theme;
                     self.draft.paused_until = config.paused_until;
                     self.config = config;
                 }
@@ -582,35 +627,44 @@ impl HushApp {
     }
     fn header(&mut self, ui: &mut Ui) {
         let p = self.palette();
+        let l = self.language();
         ui.horizontal(|ui| {
             if self.page == Page::Settings {
-                if icons::button(ui, Icon::Back, "Zurück zum Posteingang", p).clicked() {
+                if icons::button(ui, Icon::Back, l.text("Zurück zum Posteingang"), p).clicked() {
                     self.page = Page::Inbox;
                 }
-                label(ui, "Einstellungen", 18., p.text);
+                label(ui, l.text("Einstellungen"), 18., p.text);
             } else {
-                label(ui, "Posteingang", 18., p.text);
+                label(ui, l.text("Posteingang"), 18., p.text);
                 let unread = self.events.iter().filter(|event| event.unread).count();
                 if unread > 0 {
-                    ui.label(RichText::new(unread.to_string()).size(12.).color(p.accent))
-                        .on_hover_text(format!("{unread} ungelesen"));
+                    egui::Frame::new()
+                        .fill(p.hover)
+                        .corner_radius(8)
+                        .inner_margin(egui::Margin::symmetric(6, 1))
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(unread.to_string()).size(11.).color(p.accent))
+                                .on_hover_text(l.format(
+                                    "{count} ungelesen",
+                                    &[("count", &unread.to_string())],
+                                ));
+                        });
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.page == Page::Inbox {
-                    if icons::button(ui, Icon::Settings, "Einstellungen", p).clicked() {
+                    if icons::button(ui, Icon::Settings, l.text("Einstellungen"), p).clicked() {
                         self.page = Page::Settings;
                     }
                 } else if icons::button(
                     ui,
                     if self.light { Icon::Moon } else { Icon::Sun },
-                    "Helles / dunkles Erscheinungsbild (dieses Fenster)",
+                    l.text(if self.light { "Dunkel" } else { "Hell" }),
                     p,
                 )
                 .clicked()
                 {
-                    self.light = !self.light;
-                    theme::apply(ui.ctx(), self.light);
+                    self.save_appearance(self.config.language, !self.light, ui.ctx());
                 }
             });
         });
@@ -620,14 +674,15 @@ impl HushApp {
     }
     fn notice(&mut self, ui: &mut Ui) {
         let p = self.palette();
+        let l = self.language();
         if !self.demo && (!self.running || !self.status.alive()) {
             ui.horizontal_wrapped(|ui| {
                 label(
                     ui,
                     if self.service_job.is_some() {
-                        "Hintergrunddienst startet …"
+                        l.text("Hintergrunddienst startet …")
                     } else {
-                        "Hintergrunddienst ist inaktiv."
+                        l.text("Hintergrunddienst ist inaktiv.")
                     },
                     12.,
                     p.amber,
@@ -635,7 +690,7 @@ impl HushApp {
                 if ui
                     .add_enabled(
                         self.service_job.is_none() && !self.quitting,
-                        egui::Button::new("Dienst starten"),
+                        egui::Button::new(l.text("Dienst starten")),
                     )
                     .clicked()
                 {
@@ -643,7 +698,7 @@ impl HushApp {
                 }
             });
             if let Some(error) = &self.status.service_error {
-                label(ui, error, 12., p.danger);
+                label(ui, l.message(error), 12., p.danger);
             }
             ui.add_space(10.);
         }
@@ -660,12 +715,12 @@ impl HushApp {
         if !self.demo && access_error {
             ui.horizontal_wrapped(|ui| {
                 label(ui, if self.config.has_detail_token || self.config.oauth {
-                    "GitHub-Zugriff fehlgeschlagen. Berechtigungen und Organisationsfreigaben prüfen."
+                    l.text("GitHub-Zugriff fehlgeschlagen. Berechtigungen und Organisationsfreigaben prüfen.")
                 } else {
-                    "Repository-Zugriff fehlgeschlagen. Für private Repositories einen Detail-Token hinterlegen."
+                    l.text("Repository-Zugriff fehlgeschlagen. Für private Repositories einen Detail-Token hinterlegen.")
                 }, 12., p.amber);
                 if (self.page != Page::Settings || self.settings_tab != SettingsTab::Account)
-                    && ui.small_button("Zugriff prüfen").clicked() {
+                    && ui.small_button(l.text("Zugriff prüfen")).clicked() {
                     if self.page != Page::Settings { self.reset_draft(); }
                     self.page = Page::Settings;
                     self.settings_tab = SettingsTab::Account;
@@ -674,11 +729,11 @@ impl HushApp {
             ui.add_space(8.);
         }
         if let Some(error) = &self.status.notification_error {
-            label(ui, error, 12., p.danger);
+            label(ui, l.message(error), 12., p.danger);
             ui.add_space(8.);
         }
         if let Some(error) = &self.tray_error {
-            label(ui, error, 11.5, p.amber);
+            label(ui, l.message(error), 11.5, p.amber);
             ui.add_space(8.);
         }
     }
@@ -703,13 +758,25 @@ impl HushApp {
     }
     fn inbox(&mut self, ui: &mut Ui) {
         let p = self.palette();
+        let l = self.language();
         ui.horizontal(|ui| {
             let search_width = (ui.available_width() - 72. - ui.spacing().item_spacing.x).max(80.);
             let response = ui.add_sized(
                 [search_width, 28.],
                 egui::TextEdit::singleline(&mut self.search)
-                    .hint_text("Suchen …")
-                    .margin(vec2(8., 5.)),
+                    .hint_text(l.text("Suchen …"))
+                    .margin(egui::Margin {
+                        left: 26,
+                        right: 8,
+                        top: 5,
+                        bottom: 5,
+                    }),
+            );
+            icons::paint(
+                ui.painter(),
+                Rect::from_min_size(response.rect.min + vec2(7., 7.), vec2(14., 14.)),
+                Icon::Search,
+                p.faint,
             );
             if self.focus_search {
                 response.request_focus();
@@ -717,26 +784,27 @@ impl HushApp {
             }
             let filter = ui.add_sized(
                 [72., 28.],
-                egui::Button::new("Filter").selected(self.unread_only || self.kind.is_some()),
+                egui::Button::new(l.text("Filter"))
+                    .selected(self.unread_only || self.kind.is_some()),
             );
             egui::Popup::menu(&filter)
                 .id(filter_popup_id())
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                 .width(230.)
                 .show(|ui| {
-                    ui.checkbox(&mut self.unread_only, "Ungelesen");
+                    ui.checkbox(&mut self.unread_only, l.text("Ungelesen"));
                     ui.separator();
-                    ui.selectable_value(&mut self.kind, None, "Alle Typen");
+                    ui.selectable_value(&mut self.kind, None, l.text("Alle Typen"));
                     for kind in [Kind::Request, Kind::Issue, Kind::Review, Kind::Mention] {
-                        ui.selectable_value(&mut self.kind, Some(kind), kind.label());
+                        ui.selectable_value(&mut self.kind, Some(kind), l.text(kind.label()));
                     }
                     ui.separator();
                     if ui
                         .add_enabled(
                             self.events.iter().any(|event| event.unread),
-                            egui::Button::new("Alle als gelesen markieren"),
+                            egui::Button::new(l.text("Alle als gelesen markieren")),
                         )
-                        .on_hover_text("Markiert den gesamten lokalen Verlauf als gelesen.")
+                        .on_hover_text(l.text("Markiert den gesamten lokalen Verlauf als gelesen."))
                         .clicked()
                     {
                         self.read_all();
@@ -747,20 +815,39 @@ impl HushApp {
         ui.add_space(2.);
         let visible = self.visible_events();
         if visible.is_empty() {
-            ui.add_space(32.);
+            ui.add_space(36.);
             ui.vertical_centered(|ui| {
+                let (rect, _) = ui.allocate_exact_size(vec2(36., 36.), Sense::hover());
+                icons::paint(ui.painter(), rect.shrink(4.), Icon::Inbox, p.faint);
+                ui.add_space(8.);
                 label(
                     ui,
                     if !self.search.is_empty() || self.kind.is_some() {
-                        "Keine Treffer"
+                        l.text("Keine Treffer")
                     } else if self.unread_only {
-                        "Keine ungelesenen Benachrichtigungen"
+                        l.text("Keine ungelesenen Benachrichtigungen")
                     } else {
-                        "Keine Benachrichtigungen"
+                        l.text("Keine Benachrichtigungen")
                     },
                     13.,
                     p.muted,
                 );
+                let filtered = !self.search.is_empty() || self.kind.is_some() || self.unread_only;
+                label(
+                    ui,
+                    l.text(if filtered {
+                        "Suche oder Filter anpassen."
+                    } else {
+                        "Neue GitHub-Aktivitäten erscheinen hier."
+                    }),
+                    12.,
+                    p.faint,
+                );
+                if filtered && ui.small_button(l.text("Filter zurücksetzen")).clicked() {
+                    self.search.clear();
+                    self.kind = None;
+                    self.unread_only = false;
+                }
             });
             return;
         }
@@ -771,7 +858,7 @@ impl HushApp {
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.;
                 for event in visible {
-                    let card = event_card(ui, &event, p);
+                    let card = event_card(ui, &event, p, l);
                     if card.github.clicked() {
                         self.open_event(&event);
                     } else if card.row.clicked() {
@@ -866,6 +953,7 @@ impl eframe::App for HushApp {
         }
         if let Some(tray) = &mut self.tray {
             tray.update(tray::State {
+                language: self.config.language.resolved(),
                 running: self.running && self.status.alive(),
                 paused: self.config.paused(),
                 unread: self.events.iter().filter(|e| e.unread).count(),
@@ -907,7 +995,8 @@ impl eframe::App for HushApp {
         } else {
             self.inbox(&mut ui);
         }
-        Toast::show(&mut self.message, root.ctx(), p);
+        let language = self.language();
+        Toast::show(&mut self.message, root.ctx(), p, language);
     }
 }
 impl Drop for HushApp {
@@ -1021,7 +1110,7 @@ struct EventCardResponse {
     github: egui::Response,
 }
 
-fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> EventCardResponse {
+fn event_card(ui: &mut Ui, event: &Event, p: Palette, l: Language) -> EventCardResponse {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 56.), Sense::hover());
     let response = ui.interact(r, ui.id().with(&event.id), Sense::click());
     let github_rect = Rect::from_min_size(r.right_top() + vec2(-34., 4.), vec2(28., 28.));
@@ -1029,7 +1118,7 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> EventCardResponse {
     let github = ui.interact(github_rect, response.id.with("github"), Sense::click());
     let show_github = response.contains_pointer() || response.has_focus() || github.has_focus();
     if show_github {
-        ui.painter().rect_filled(r, 4, p.card);
+        ui.painter().rect_filled(r.shrink2(vec2(0., 2.)), 6, p.card);
     }
     if response.has_focus() {
         ui.painter().rect_stroke(
@@ -1043,32 +1132,35 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> EventCardResponse {
         [r.left_bottom(), r.right_bottom()],
         Stroke::new(1., p.border),
     );
+    let icon_rect = Rect::from_min_size(r.min + vec2(3., 6.), vec2(26., 26.));
+    ui.painter()
+        .rect_filled(icon_rect, 7, p.kind(event.kind).gamma_multiply(0.09));
     icons::paint(
         ui.painter(),
-        Rect::from_min_size(r.min + vec2(6., 9.), vec2(16., 16.)),
+        icon_rect.shrink(4.),
         event.kind.into(),
         p.kind(event.kind),
     );
     paint_elided(
         ui,
-        r.min + vec2(30., 8.),
+        r.min + vec2(38., 8.),
         &event.title,
         13.,
         if event.unread { p.text } else { p.muted },
-        r.width() - 70.,
+        r.width() - 78.,
     );
     paint_elided(
         ui,
-        r.min + vec2(30., 31.),
+        r.min + vec2(38., 31.),
         &format!("{} · @{}", event.repository, event.actor),
         11.,
         p.faint,
-        r.width() - 110.,
+        r.width() - 118.,
     );
     ui.painter().text(
         r.right_top() + vec2(-6., 32.),
         Align2::RIGHT_TOP,
-        age(event),
+        age(event, l),
         FontId::proportional(10.5),
         p.faint,
     );
@@ -1105,7 +1197,7 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> EventCardResponse {
         egui::WidgetInfo::labeled(
             egui::WidgetType::Button,
             true,
-            format!("{} – auf GitHub öffnen", event.title),
+            format!("{} – {}", event.title, l.text("Auf GitHub öffnen")),
         )
     });
     response.widget_info(|| {
@@ -1113,42 +1205,48 @@ fn event_card(ui: &mut Ui, event: &Event, p: Palette) -> EventCardResponse {
             egui::WidgetType::Button,
             true,
             format!(
-                "{}: {} – als gelesen markieren",
-                event.kind.short(),
-                event.title
+                "{}: {} – {}",
+                l.text(event.kind.short()),
+                event.title,
+                l.text("Als gelesen markieren")
             ),
         )
     });
     let row = response
         .on_hover_text(format!(
-            "{}\n{}\n{} · @{}\nAls gelesen markieren",
-            event.kind.short(),
+            "{}\n{}\n{} · @{}\n{}",
+            l.text(event.kind.short()),
             event.title,
             event.repository,
-            event.actor
+            event.actor,
+            l.text("Als gelesen markieren")
         ))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     EventCardResponse {
         row,
         github: github
-            .on_hover_text("Auf GitHub öffnen")
+            .on_hover_text(l.text("Auf GitHub öffnen"))
             .on_hover_cursor(egui::CursorIcon::PointingHand),
     }
 }
 
-fn age(event: &Event) -> String {
+fn age(event: &Event, l: Language) -> String {
     let m = (Utc::now() - event.occurred_at).num_minutes().max(0);
     if m < 1 {
-        "Gerade eben".into()
+        l.text("Gerade eben").into()
     } else if m < 60 {
-        format!("{m} Min.")
+        l.format("{count} Min.", &[("count", &m.to_string())])
     } else if m < 1440 {
-        format!("{} Std.", m / 60)
+        l.format("{count} Std.", &[("count", &(m / 60).to_string())])
     } else {
         event
             .occurred_at
             .with_timezone(&Local)
-            .format("%d.%m.")
+            .format(match l {
+                Language::De => "%d.%m.",
+                Language::En | Language::Zh | Language::Ja => "%m/%d",
+                _ => "%d/%m",
+            })
             .to_string()
     }
 }

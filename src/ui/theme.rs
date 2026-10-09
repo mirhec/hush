@@ -1,4 +1,4 @@
-use crate::model::Kind;
+use crate::{i18n::Language, model::Kind};
 use eframe::egui::{self, Color32, FontId, RichText, Stroke};
 
 #[derive(Clone, Copy)]
@@ -103,6 +103,17 @@ pub fn apply(ctx: &egui::Context, light: bool) {
     s.visuals.widgets.active.bg_fill = p.hover;
     s.visuals.widgets.active.weak_bg_fill = p.hover;
     s.visuals.widgets.active.fg_stroke = Stroke::new(1.0, p.accent);
+    for widget in [
+        &mut s.visuals.widgets.inactive,
+        &mut s.visuals.widgets.hovered,
+        &mut s.visuals.widgets.active,
+        &mut s.visuals.widgets.open,
+    ] {
+        widget.corner_radius = egui::CornerRadius::same(6);
+    }
+    s.visuals.window_corner_radius = egui::CornerRadius::same(9);
+    s.visuals.menu_corner_radius = egui::CornerRadius::same(8);
+    s.spacing.menu_margin = egui::Margin::same(8);
     s.spacing.item_spacing = egui::vec2(8.0, 6.0);
     s.spacing.button_padding = egui::vec2(10.0, 5.0);
     s.spacing.interact_size = egui::vec2(28.0, 28.0);
@@ -115,6 +126,30 @@ pub fn apply(ctx: &egui::Context, light: bool) {
     s.text_styles
         .insert(egui::TextStyle::Heading, FontId::proportional(20.0));
     ctx.set_global_style(s);
+}
+
+pub fn fonts(ctx: &egui::Context, language: Language) {
+    use egui::{FontData, FontDefinitions, FontFamily};
+    let mut fonts = FontDefinitions::default();
+    let (name, data): (&str, &'static [u8]) = if language == Language::Ja {
+        (
+            "hush-cjk-ja",
+            include_bytes!("../../assets/fonts/HushCJKJapanese-Regular.otf"),
+        )
+    } else {
+        (
+            "hush-cjk-zh",
+            include_bytes!("../../assets/fonts/HushCJKChinese-Regular.otf"),
+        )
+    };
+    fonts
+        .font_data
+        .insert(name.into(), FontData::from_static(data).into());
+    // Preserve egui's Latin typography; the bundled face fills CJK and native language names.
+    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+        fonts.families.entry(family).or_default().push(name.into());
+    }
+    ctx.set_fonts(fonts);
 }
 pub fn label(ui: &mut egui::Ui, text: impl Into<String>, size: f32, color: Color32) {
     ui.label(RichText::new(text).size(size).color(color));

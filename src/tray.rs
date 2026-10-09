@@ -2,6 +2,7 @@
 //! eframe's native event loop. All callbacks wake App::logic, even when hidden.
 #[cfg(target_os = "linux")]
 mod linux;
+use crate::i18n::Language;
 use anyhow::Result;
 use eframe::egui;
 use std::{
@@ -28,10 +29,32 @@ pub enum Event {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct State {
+    pub language: Language,
     pub running: bool,
     pub paused: bool,
     pub unread: usize,
     pub warning: bool,
+}
+
+impl State {
+    fn title(&self) -> String {
+        let phase = if !self.running {
+            "Dienst inaktiv"
+        } else if self.paused {
+            "Pausiert"
+        } else if self.warning {
+            "Verbindung prüfen"
+        } else {
+            "Aktiv"
+        };
+        self.language.format(
+            "Hush · {phase} · {} ungelesen",
+            &[
+                ("phase", self.language.text(phase)),
+                ("0", &self.unread.to_string()),
+            ],
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -52,6 +75,9 @@ impl Events {
 struct NativeTray {
     icon: TrayIcon,
     status: MenuItem,
+    open: MenuItem,
+    settings: MenuItem,
+    quit: MenuItem,
     pause: MenuItem,
     start: MenuItem,
     refresh: MenuItem,
@@ -59,14 +85,16 @@ struct NativeTray {
 #[cfg(not(target_os = "linux"))]
 impl NativeTray {
     fn new(events: Events, directory: PathBuf) -> Result<Self> {
+        let language = Language::System.resolved();
         let menu = Menu::new();
-        let status = MenuItem::new("Hush · Dienst startet …", false, None);
-        let open = MenuItem::with_id("open", "Hush öffnen", true, None);
-        let settings = MenuItem::with_id("settings", "Einstellungen", true, None);
-        let refresh = MenuItem::with_id("refresh", "Jetzt aktualisieren", false, None);
-        let pause = MenuItem::with_id("pause", "30 Minuten pausieren", true, None);
-        let start = MenuItem::with_id("start", "Dienst starten", true, None);
-        let quit = MenuItem::with_id("quit", "Hush beenden", true, None);
+        let status = MenuItem::new(language.text("Hush · Dienst startet …"), false, None);
+        let open = MenuItem::with_id("open", language.text("Hush öffnen"), true, None);
+        let settings = MenuItem::with_id("settings", language.text("Einstellungen"), true, None);
+        let refresh =
+            MenuItem::with_id("refresh", language.text("Jetzt aktualisieren"), false, None);
+        let pause = MenuItem::with_id("pause", language.text("30 Minuten pausieren"), true, None);
+        let start = MenuItem::with_id("start", language.text("Dienst starten"), true, None);
+        let quit = MenuItem::with_id("quit", language.text("Hush beenden"), true, None);
         menu.append_items(&[
             &status,
             &PredefinedMenuItem::separator(),
@@ -108,7 +136,7 @@ impl NativeTray {
         let builder = TrayIconBuilder::new()
             .with_id("io.hush.github")
             .with_menu(Box::new(menu))
-            .with_tooltip("Hush · GitHub Inbox")
+            .with_tooltip(language.text("Hush · GitHub Inbox"))
             .with_temp_dir_path(directory)
             .with_icon(tray_icon::Icon::from_rgba(
                 data.rgba,
@@ -120,29 +148,29 @@ impl NativeTray {
         Ok(Self {
             icon,
             status,
+            open,
+            settings,
+            quit,
             pause,
             start,
             refresh,
         })
     }
     fn update(&self, state: &State) {
-        let phase = if !state.running {
-            "Dienst inaktiv"
-        } else if state.paused {
-            "Pausiert"
-        } else if state.warning {
-            "Verbindung prüfen"
-        } else {
-            "Aktiv"
-        };
-        let text = format!("Hush · {phase} · {} ungelesen", state.unread);
+        let language = state.language;
+        let text = state.title();
+        self.open.set_text(language.text("Hush öffnen"));
+        self.settings.set_text(language.text("Einstellungen"));
+        self.quit.set_text(language.text("Hush beenden"));
+        self.start.set_text(language.text("Dienst starten"));
+        self.refresh.set_text(language.text("Jetzt aktualisieren"));
         self.status.set_text(&text);
         let _ = self.icon.set_tooltip(Some(&text));
-        self.pause.set_text(if state.paused {
+        self.pause.set_text(language.text(if state.paused {
             "Benachrichtigungen fortsetzen"
         } else {
             "30 Minuten pausieren"
-        });
+        }));
         self.start.set_enabled(!state.running);
         self.refresh.set_enabled(state.running);
     }
