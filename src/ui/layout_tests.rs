@@ -383,3 +383,85 @@ fn settings_switch_changes_only_after_click_and_supports_keyboard_focus() {
     run(vec![key(true)]);
     assert!(!run(vec![key(false)]).0);
 }
+
+#[test]
+fn oauth_code_is_visible_and_cancellation_discards_late_credentials() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    app.demo = false;
+    app.running = true;
+    app.status.heartbeat = Utc::now().timestamp();
+    app.page = Page::Settings;
+    app.settings_tab = SettingsTab::Account;
+    app.config.login.clear();
+    let (send, events) = mpsc::channel();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    app.oauth_login = Some(OAuthLogin {
+        events,
+        cancel: cancelled.clone(),
+        user_code: None,
+        verification_uri: None,
+        expires_at: None,
+    });
+    app.open_url = |url| {
+        assert_eq!(url, "https://github.com/login/device");
+        Ok(())
+    };
+    send.send(OAuthMessage::Code {
+        user_code: "TEST-CODE".into(),
+        verification_uri: "https://github.com/login/device".into(),
+        expires_at: Instant::now() + Duration::from_secs(900),
+    })
+    .unwrap();
+    app.poll_oauth();
+    let size = vec2(360., 480.);
+    draw(&ctx, &mut app, size, vec![]);
+    let labels = draw(&ctx, &mut app, size, vec![]);
+    for title in ["TEST-CODE", "Kopieren", "GitHub öffnen ↗", "Abbrechen"] {
+        let rect = labels.iter().find(|(text, _)| text == title).unwrap().1;
+        assert!(Rect::from_min_size(pos2(0., 0.), size).contains_rect(rect));
+    }
+    send.send(OAuthMessage::Finished(Ok(oauth::Credentials {
+        access_token: "test-access".into(),
+        refresh_token: Some("test-refresh".into()),
+        expires_at: Some(123),
+        refresh_expires_at: Some(456),
+        client_id: "testclient".into(),
+    })))
+    .ok()
+    .unwrap();
+    click_text(&ctx, &mut app, size, "Abbrechen");
+    assert!(cancelled.load(Ordering::Relaxed));
+    app.poll_oauth();
+    assert!(app.oauth_login.is_none());
+    assert!(app.job.is_none());
+    assert!(!app.config.oauth);
+    assert!(app.config.login.is_empty());
+}
+
+#[test]
+fn oauth_accounts_hide_manual_credentials_and_settings_preserve_authentication() {
+    let ctx = egui::Context::default();
+    let mut app = demo_app(&ctx);
+    app.demo = false;
+    app.running = true;
+    app.status.heartbeat = Utc::now().timestamp();
+    app.page = Page::Settings;
+    app.settings_tab = SettingsTab::Account;
+    app.config.oauth = true;
+    app.draft.oauth = true;
+    let labels = draw(&ctx, &mut app, vec2(360., 480.), vec![]);
+    assert!(!labels.iter().any(|(text, _)| text == "Manuelle Tokens"));
+    let temporary = tempfile::tempdir().unwrap();
+    let paths = Paths::at(temporary.path().join("data")).unwrap();
+    let mut store = Store::open(&paths).unwrap();
+    store.save_config(&app.config).unwrap();
+    app.store = Some(store);
+    app.config.oauth = false;
+    app.draft.oauth = false;
+    app.save_settings();
+    assert!(
+        app.config.oauth,
+        "Preferences must not overwrite a newer authentication mode"
+    );
+}

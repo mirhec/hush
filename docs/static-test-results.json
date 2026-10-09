@@ -1,4 +1,5 @@
 {
+  "record_status": "Historical results from initial project creation; not validation of the current revision.",
   "checks_passed": 13,
   "checks": [
     "Cargo.toml parses as TOML",

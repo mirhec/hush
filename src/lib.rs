@@ -4,6 +4,7 @@ pub mod engine;
 pub mod filter;
 pub mod model;
 pub mod notify;
+pub mod oauth;
 pub mod secrets;
 pub mod storage;
 #[cfg(feature = "desktop")]

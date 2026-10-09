@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -127,6 +128,19 @@ class ReleaseVersionTests(unittest.TestCase):
             self.assertIn("cargo build --frozen --release", manifest["modules"][0]["build-commands"])
             with self.assertRaises(FileExistsError):
                 prepare.prepare(manifest_path.parent, vendor=False)
+
+    def test_flatpak_receives_only_the_public_oauth_client_id(self):
+        spec = importlib.util.spec_from_file_location("flatpak_oauth", ROOT / "packaging/flatpak/prepare.py")
+        prepare = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(prepare)
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(os.environ, {
+            "HUSH_GITHUB_CLIENT_ID": "test_public_client_id", "GITHUB_TOKEN": "do-not-copy",
+        }):
+            manifest = json.loads(prepare.prepare(Path(temporary) / "stage", vendor=False).read_text())
+            environment = manifest["modules"][0]["build-options"]["env"]
+            self.assertEqual(environment["HUSH_GITHUB_CLIENT_ID"], "test_public_client_id")
+            self.assertNotIn("GITHUB_TOKEN", environment)
+
 
 
 if __name__ == "__main__":

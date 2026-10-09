@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum ApiError {
     #[error("GitHub-Token ungültig oder abgelaufen. Bitte neu verbinden.")] Unauthorized,
-    #[error("GitHub verweigert den Zugriff (HTTP {0}). Private Repositories brauchen einen passenden Nur-Lesen-Detail-Token; Organisationen eventuell eine Freigabe.")] Access(u16),
+    #[error("GitHub verweigert den Zugriff (HTTP {0}). Bitte GitHub-Anmeldung und Organisationsfreigaben prüfen.")] Access(u16),
     #[error("GitHub-Abfragelimit erreicht. Automatischer neuer Versuch nach der Wartezeit.")] RateLimit(i64),
     #[error("Das Abfragebudget dieses Durchlaufs ist aufgebraucht. Verbleibende Threads werden später verarbeitet.")] Budget,
     #[error("Netzwerkfehler oder Zeitüberschreitung beim Kontakt mit GitHub.")] Network,
@@ -25,6 +25,7 @@ pub struct Api {
     primary: Client,
     detail: Option<Client>,
     pub calls: Cell<u32>,
+    pub expires_at: Option<i64>,
     pub rate: RefCell<Rate>,
 }
 
@@ -43,7 +44,7 @@ fn client(token: &str) -> anyhow::Result<Client> {
 }
 impl Api {
     pub fn new(primary: &str, detail: Option<&str>) -> anyhow::Result<Self> {
-        Ok(Self { primary:client(primary)?,detail:detail.map(client).transpose()?,calls:Cell::new(0),rate:RefCell::new(Rate { poll_floor:60,..Default::default() }) })
+        Ok(Self { primary:client(primary)?,detail:detail.map(client).transpose()?,calls:Cell::new(0),expires_at:None,rate:RefCell::new(Rate { poll_floor:60,..Default::default() }) })
     }
     pub fn reset_cycle(&self) { self.calls.set(0); }
     fn request(&self, primary: bool, raw_url: &str, body: Option<&Value>) -> ApiResult<(Value, HeaderMap)> {
@@ -235,6 +236,16 @@ pub fn validate_scopes(scopes: &[String]) -> anyhow::Result<bool> {
     let forbidden=scopes.iter().any(|s| !["notifications", "read:org"].contains(&s.as_str()));
     anyhow::ensure!(!forbidden,"Dieser Token ist zu weit berechtigt. Bitte einen separaten klassischen Token nur mit notifications und optional read:org erstellen.");
     Ok(scopes.iter().any(|s|s=="read:org"))
+}
+
+/// OAuth's repo scope includes write access even though Hush only reads repository data.
+pub fn validate_oauth_scopes(scopes: &[String]) -> anyhow::Result<bool> {
+    anyhow::ensure!(scopes.iter().any(|scope| scope == "repo"),
+        "GitHub-Anmeldung benötigt Zugriff auf private Repositories. Bitte erneut anmelden.");
+    anyhow::ensure!(scopes.iter().all(|scope| ["notifications", "repo", "read:org", "offline_access"].contains(&scope.as_str())),
+        "GitHub-Anmeldung enthält unerwartete Berechtigungen. Bitte den Hush-Zugriff auf GitHub widerrufen und erneut anmelden.");
+    // GitHub may normalize away notifications, since repo also covers that endpoint.
+    Ok(scopes.iter().any(|scope| scope == "read:org"))
 }
 
 #[cfg(test)]

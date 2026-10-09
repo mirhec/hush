@@ -4,6 +4,7 @@ import argparse
 import datetime
 import importlib.util
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,6 +27,12 @@ def prepare(destination, vendor=True):
     for name in ["Cargo.toml", "Cargo.lock", "LICENSE"]:
         shutil.copy2(ROOT / name, source / name)
     manifest = json.loads((ROOT / "packaging/flatpak/io.hush.github.json").read_text())
+    # Forward only this public build identifier into the sandbox, never access tokens.
+    client_id = os.environ.get("HUSH_GITHUB_CLIENT_ID", "").strip()
+    if client_id:
+        if not client_id.isascii() or not client_id.replace("_", "").isalnum():
+            raise ValueError("Invalid HUSH_GITHUB_CLIENT_ID")
+        manifest["modules"][0]["build-options"]["env"]["HUSH_GITHUB_CLIENT_ID"] = client_id
     (destination / "io.hush.github.json").write_text(json.dumps(manifest, indent=2) + "\n")
     metadata = source / "packaging/flatpak/io.hush.github.metainfo.xml"
     tree = ET.parse(metadata)

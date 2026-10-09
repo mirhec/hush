@@ -197,15 +197,7 @@ impl HushApp {
             label(ui, "Die Demo verwendet keine Zugangsdaten.", 12., p.muted);
             return;
         }
-        section(
-            ui,
-            if self.config.login.is_empty() {
-                "GitHub verbinden"
-            } else {
-                "Zugangsdaten"
-            },
-            p,
-        );
+        section(ui, "GitHub-Konto", p);
         if !self.config.login.is_empty() {
             label(
                 ui,
@@ -214,6 +206,152 @@ impl HushApp {
                 p.accent,
             );
         }
+        self.oauth_settings(ui);
+        if !self.config.oauth {
+            ui.add_space(8.);
+            egui::CollapsingHeader::new("Manuelle Tokens")
+                .default_open(!self.config.login.is_empty())
+                .show(ui, |ui| {
+                    ui.add_enabled_ui(self.job.is_none() && self.oauth_login.is_none(), |ui| {
+                        self.manual_token_settings(ui);
+                    });
+                });
+        }
+        ui.add_space(8.);
+        egui::CollapsingHeader::new("Manuelle Team-Liste").show(ui, |ui| {
+            label(
+                ui,
+                "Ohne read:org hier organisation/team-slug eintragen.",
+                12.,
+                p.muted,
+            );
+            ui.add(
+                egui::TextEdit::multiline(&mut self.teams_text)
+                    .desired_rows(2)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("organisation/frontend"),
+            );
+        });
+        if !self.config.login.is_empty() {
+            ui.add_space(12.);
+            ui.add_enabled_ui(self.job.is_none() && self.oauth_login.is_none(), |ui| {
+                if ui.small_button("Konto trennen …").clicked() {
+                    self.confirm_disconnect = true;
+                }
+                if self.confirm_disconnect {
+                    label(
+                        ui,
+                        "Konto trennen, gespeicherte Zugangsdaten und lokale Daten löschen?",
+                        12.,
+                        p.danger,
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("Trennen und löschen").clicked() {
+                            self.account_job(true);
+                            self.confirm_disconnect = false;
+                        }
+                        if ui.button("Abbrechen").clicked() {
+                            self.confirm_disconnect = false;
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    fn oauth_settings(&mut self, ui: &mut Ui) {
+        let p = self.palette();
+        if let Some(login) = &self.oauth_login {
+            let user_code = login.user_code.clone();
+            let verification_uri = login.verification_uri.clone();
+            let expires_at = login.expires_at;
+            if let Some(code) = user_code {
+                label(ui, "Diesen Code auf GitHub eingeben:", 12., p.muted);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(&code).monospace().size(21.).color(p.text));
+                    if ui.button("Kopieren").clicked() {
+                        ui.ctx().copy_text(code.clone());
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    if let Some(uri) = &verification_uri
+                        && ui.button("GitHub öffnen ↗").clicked()
+                    {
+                        self.open(uri);
+                    }
+                    if ui.button("Abbrechen").clicked() {
+                        self.cancel_oauth();
+                    }
+                });
+                ui.horizontal_wrapped(|ui| {
+                    ui.spinner();
+                    label(ui, "Warte auf Bestätigung …", 12., p.muted);
+                    if let Some(expires_at) = expires_at {
+                        let seconds = expires_at
+                            .saturating_duration_since(Instant::now())
+                            .as_secs();
+                        label(
+                            ui,
+                            format!("{}:{:02} Min.", seconds / 60, seconds % 60),
+                            11.,
+                            p.faint,
+                        );
+                    }
+                });
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spinner();
+                    label(ui, "GitHub-Anmeldung wird vorbereitet …", 12., p.muted);
+                    if ui.button("Abbrechen").clicked() {
+                        self.cancel_oauth();
+                    }
+                });
+            }
+            return;
+        }
+        ui.add_space(6.);
+        ui.horizontal_wrapped(|ui| {
+            let enabled = self.job.is_none() && crate::oauth::client_id().is_some();
+            if ui
+                .add_enabled_ui(enabled, |ui| {
+                    primary(
+                        ui,
+                        if self.config.oauth {
+                            "Erneut anmelden"
+                        } else {
+                            "Mit GitHub anmelden"
+                        },
+                        p,
+                    )
+                })
+                .inner
+                .clicked()
+            {
+                self.start_oauth();
+            }
+            if self.job.is_some() {
+                ui.spinner();
+            }
+        });
+        if crate::oauth::client_id().is_none() {
+            label(
+                ui,
+                "GitHub-Anmeldung ist in diesem Build nicht eingerichtet.",
+                11.5,
+                p.muted,
+            );
+        } else {
+            label(
+                ui,
+                "Für private Repositories umfasst die GitHub-Freigabe auch Schreibrechte. Hush liest ausschließlich.",
+                11.5,
+                p.muted,
+            );
+        }
+    }
+
+    fn manual_token_settings(&mut self, ui: &mut Ui) {
+        let p = self.palette();
         label(ui, "Benachrichtigungs-Token", 13., p.text);
         ui.add(
             egui::TextEdit::singleline(&mut self.token)
@@ -263,10 +401,8 @@ impl HushApp {
         ui.horizontal_wrapped(|ui| {
             if ui
                 .add_enabled(
-                    self.job.is_none()
-                        && (!self.token.trim().is_empty()
-                            || (!self.config.login.is_empty()
-                                && !self.details_token.trim().is_empty())),
+                    !self.token.trim().is_empty()
+                        || (!self.config.login.is_empty() && !self.details_token.trim().is_empty()),
                     egui::Button::new(if self.config.login.is_empty() {
                         "Verbinden"
                     } else {
@@ -278,49 +414,8 @@ impl HushApp {
             {
                 self.account_job(false);
             }
-            if self.job.is_some() {
-                ui.spinner();
-            }
             label(ui, "Speicherung im System-Schlüsselbund", 11., p.faint);
         });
-        section(ui, "Teams", p);
-        egui::CollapsingHeader::new("Manuelle Team-Liste").show(ui, |ui| {
-            label(
-                ui,
-                "Ohne read:org hier organisation/team-slug eintragen.",
-                12.,
-                p.muted,
-            );
-            ui.add(
-                egui::TextEdit::multiline(&mut self.teams_text)
-                    .desired_rows(2)
-                    .desired_width(f32::INFINITY)
-                    .hint_text("organisation/frontend"),
-            );
-        });
-        if !self.config.login.is_empty() {
-            ui.add_space(12.);
-            if ui.small_button("Konto trennen …").clicked() {
-                self.confirm_disconnect = true;
-            }
-            if self.confirm_disconnect {
-                label(
-                    ui,
-                    "Konto trennen, beide gespeicherten Tokens und lokale Daten löschen?",
-                    12.,
-                    p.danger,
-                );
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button("Trennen und löschen").clicked() {
-                        self.account_job(true);
-                        self.confirm_disconnect = false;
-                    }
-                    if ui.button("Abbrechen").clicked() {
-                        self.confirm_disconnect = false;
-                    }
-                });
-            }
-        }
     }
 
     fn diagnostics(&mut self, ui: &mut Ui) {

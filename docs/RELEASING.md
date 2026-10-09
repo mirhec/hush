@@ -1,141 +1,157 @@
-# Releases und Installer
+# Releases and installers
 
-`release.yml` ist der einzige GitHub-Actions-Workflow. Er reagiert automatisch
-nur auf veröffentlichte GitHub-Releases, einschließlich Prereleases.
-Pushes auf `main`, Tag-Pushes und Pull Requests starten keine Actions.
-Die Release-Version kommt ausschließlich aus dem gewählten Git-Tag. Der Workflow
-erstellt keine zusätzlichen Releases und wählt keine nächste Versionsnummer aus.
+`release.yml` is the only GitHub Actions workflow. It runs automatically only
+when a GitHub release is published, including prereleases. Pushes to `main`, tag
+pushes, and pull requests do not start Actions. The release version comes
+exclusively from the selected Git tag. The workflow does not create additional
+releases or choose the next version number.
 
-Alle Schritte erscheinen in einem gemeinsamen Lauf „Release Hush“:
+All stages appear in a single "Release Hush" run:
 
-1. Tag als Versionsnummer prüfen und in die Cargo-Dateien des Build-Verzeichnisses
-   übernehmen; Paketskripte prüfen; Existenz des veröffentlichten Releases
-   bestätigen; `cargo audit` ausführen.
-2. Nach erfolgreicher Prüfung Tests, Clippy, Builds und Installer für alle vier
-   Plattformen ausführen. Alle Builds verwenden dieselbe zuvor geprüfte Commit-ID
-   und übernehmen denselben Release-Tag vor dem Kompilieren als Paketversion.
-3. Nach Erfolg aller Plattformen das vollständige Installer-Set und
-   `SHA256SUMS.txt` an das Release hochladen.
+1. Validate the tag as a version number and apply it to the Cargo files in the
+   build directory; check packaging scripts; confirm that the published release
+   exists; run `cargo audit`.
+2. After validation succeeds, run tests, Clippy, builds, and installer packaging
+   for all four platforms. Every build uses the same previously validated commit
+   and applies the same release tag as its package version before compilation.
+3. After every platform succeeds, upload the complete installer set and
+   `SHA256SUMS.txt` to the release.
 
-Schlägt eine Stufe fehl, laufen ihre nachfolgenden Stufen nicht. Ein falscher
-Versionstag stoppt bereits vor den aufwendigen Plattform-Builds.
+If a stage fails, its dependent stages do not run. An invalid version tag stops
+the workflow before the expensive platform builds.
 
-| Plattform | Release-Datei | Installation |
+| Platform | Release asset | Installation |
 |---|---|---|
-| Windows x86-64 | `Hush-VERSION-windows-x86_64-setup.exe` | Inno Setup, pro Benutzer, mit Deinstallation |
+| Windows x86-64 | `Hush-VERSION-windows-x86_64-setup.exe` | Inno Setup, per user, with uninstaller |
 | macOS Apple Silicon | `Hush-VERSION-macos-arm64.pkg` | `/Applications/Hush.app` |
 | macOS Intel | `Hush-VERSION-macos-x86_64.pkg` | `/Applications/Hush.app` |
-| Linux x86-64 | `Hush-VERSION-linux-x86_64.flatpak` | Flatpak, pro Benutzer |
+| Linux x86-64 | `Hush-VERSION-linux-x86_64.flatpak` | Flatpak, per user |
 
-Autostart wird nicht automatisch aktiviert. Im Windows-Installer ist er eine
-abwählbare, zunächst ausgeschaltete Option. Die Deinstallation lässt Kontodaten
-und Verlauf bestehen; „Konto trennen und lokale Daten löschen“ in Hush entfernt
-diese bei Bedarf vorher.
+Autostart is not enabled automatically. The Windows installer offers it as an
+optional checkbox that is initially unchecked. Uninstalling preserves account
+data and history; use Hush's disconnect-and-delete action first to remove them
+if needed.
 
-## Ablauf
+## Release process
 
-1. Gewünschte Änderungen nach `main` pushen.
-2. Ein GitHub-Release mit einem neuen Tag auf diesem Stand veröffentlichen,
-   beispielsweise `1.0.2` oder `v1.0.2`. Die Cargo-Version muss nicht geändert werden.
-3. Unter GitHub Actions „Release Hush“ kontrollieren. Die Installer
-   erscheinen erst nach Abschluss aller Builds am Release.
+1. Push the desired changes to `main`.
+2. Publish a GitHub release with a new tag pointing to that revision, such as
+   `1.0.2` or `v1.0.2`. The Cargo version does not need to be changed.
+3. Check "Release Hush" in GitHub Actions. Installers appear on the release only
+   after all builds have finished.
 
-Tags müssen gültige SemVer-Versionen sein, mit optionalem `v` am Anfang.
-Prereleases wie `v1.1.0-rc.1` behalten ihren vollständigen Namen in Anwendung und
-Dateinamen. Die numerischen Windows-/macOS-Metadaten verwenden dafür `1.1.0`.
-Für die nativen Installer dürfen die drei numerischen Teile jeweils höchstens
-65535 sein. Ungültige Tags werden vor den Plattform-Builds abgewiesen.
+Tags must be valid SemVer versions, optionally prefixed with `v`. Prereleases
+such as `v1.1.0-rc.1` retain their full name in the application and filenames.
+Numeric Windows/macOS metadata uses `1.1.0` for that example. Each of the three
+numeric components must be at most 65535 for the native installers. Invalid tags
+are rejected before platform builds start.
 
-`python3 packaging/version.py --stamp --tag "$RELEASE_TAG"` setzt die Version
-von Hush in `Cargo.toml` und im passenden Eintrag in `Cargo.lock`. Abhängigkeiten
-und Prüfsummen bleiben unverändert; es wird kein Lockfile neu aufgelöst und kein
-Commit zurückgeschrieben. Cargo verwendet diese Version auch für
-`CARGO_PKG_VERSION`, damit `hush --version` und die UI zum Installer passen.
-Die Flatpak-Quellvorbereitung übernimmt die bereits angepassten Dateien, sodass
-auch der Build ohne Git-Metadaten und Netzwerk dieselbe Version bekommt.
+`python3 packaging/version.py --stamp --tag "$RELEASE_TAG"` sets Hush's version
+in `Cargo.toml` and its matching entry in `Cargo.lock`. Dependencies and checksums
+remain unchanged; the lockfile is not resolved again, and no commit is written
+back. Cargo also uses this version for `CARGO_PKG_VERSION`, keeping
+`hush --version` and the UI consistent with the installer. Flatpak source
+preparation includes the updated files, so its build receives the same version
+without Git metadata or network access.
 
-Bei lokalen Builds ohne diesen Vorbereitungsschritt bleibt die eingecheckte
-Cargo-Version der Entwicklungsstand. Aufrufe ohne `--stamp` lesen und prüfen die
-Version nur; Paketierung verändert sie nicht nachträglich.
+Local builds without this preparation step retain the checked-in development
+version from Cargo. Calls without `--stamp` only read and validate the version;
+packaging does not change it afterward.
 
-Ein fehlgeschlagener Lauf kann erneut gestartet werden. „Run workflow“ nimmt
-auch den Tag eines vorhandenen Releases entgegen. Uploads ersetzen gleichnamige
-Dateien; ein unveränderliches GitHub-Release erlaubt das nach Veröffentlichung
-nicht. Für aktivierte Release-Immutability müsste die Veröffentlichung erst nach
-dem Asset-Upload erfolgen; diese Pipeline verwendet ausdrücklich `published`.
+A failed run can be restarted. "Run workflow" also accepts the tag of an existing
+release. Uploads replace assets with matching filenames; immutable GitHub
+releases do not allow this after publication. Release immutability would require
+publishing after asset upload; this pipeline explicitly uses `published`.
 
-Die Flatpak-Pipeline installiert das gebaute
-Bundle im CI-Profil und prüft Programmversion sowie Dienststart und Status ohne
-GitHub-Zugangsdaten. Ein separater Test prüft Tray-Aktivierung, Menü und
-Host-Neustart in einer isolierten D-Bus-Sitzung.
+The Flatpak pipeline installs the built bundle in the CI profile and checks the
+application version, service startup, and status without GitHub credentials. A
+separate test checks tray activation, its menu, and host restart in an isolated
+D-Bus session.
 
-### Fehler bei den ursprünglichen Releases 1.0.0 und 1.0.1
+### GitHub OAuth application
 
-Der Tag `1.0.0` zeigte auf Commit `1bf25da`, dessen `Cargo.toml` und `Cargo.lock`
-noch `0.1.0` enthalten. Deshalb brachen alle vier Release-Jobs bei der Prüfung mit
-`Release tag '1.0.0' does not match Cargo version '0.1.0'` ab. Der gleichzeitig
-gestartete Main-Build hatte keinen Release-Tag zu prüfen und konnte weiterlaufen.
-Er war unabhängig vom Release-Lauf und stellte diesem keine Artefakte bereit.
+Browser sign-in uses the registered Hush OAuth application's device flow. Its
+public client ID is included in `src/oauth.rs`; official builds work without an
+extra repository setting. For a fork, register an OAuth application, enable
+Device Flow, and set the optional repository Actions variable
+`HUSH_GITHUB_CLIENT_ID`. The workflow applies this build-time override on every
+platform, including the Flatpak sandbox. An empty override uses Hush's built-in
+client ID. This identifier is public; never add an OAuth client secret to the
+repository or installer.
 
-Nach dem Anheben der Cargo-Version auf `1.0.0` trat derselbe Fehler mit dem Tag
-`1.0.1` auf. Der Workflow übernimmt deshalb jetzt die Release-Version aus dem Tag.
-Für den ersten Lauf mit dieser Änderung ein neues Release `1.0.2` auf dem
-aktualisierten `main` erstellen. Ältere Tags enthalten noch das alte Skript;
-„Re-run jobs“ aktualisiert deren Quellcode nicht. Bestehende veröffentlichte Tags
-werden nicht verschoben. Danach reicht für weitere Releases jeweils ein neuer Tag.
+The OAuth login requests `notifications`, `repo`, `read:org`, and `offline_access`
+to cover notifications, private repositories, organization/team membership, and
+renewal of expiring access tokens. GitHub's
+`repo` scope includes write permissions even though Hush only reads repository
+data. GitHub presents the permissions during browser authorization. Organization
+policies and SSO can require additional approval.
 
-## Signierung
+### Failures in the original 1.0.0 and 1.0.1 releases
 
-Ohne Zertifikate entstehen unsignierte Windows-/macOS-Installer. Das macOS-App-
-Bundle ist dann nur ad-hoc signiert, ohne Apple-Notarisierung. Gatekeeper bzw.
-SmartScreen können die Installation warnen oder blockieren. Für öffentliche
-Distribution die folgenden GitHub-Actions-Secrets hinterlegen; keine Zertifikate
-oder Kennwörter ins Repository einchecken.
+Tag `1.0.0` pointed to commit `1bf25da`, whose `Cargo.toml` and `Cargo.lock` still
+contained `0.1.0`. All four release jobs therefore failed validation with
+`Release tag '1.0.0' does not match Cargo version '0.1.0'`. The main-branch build
+started at the same time had no release tag to validate and could continue. It
+was independent of the release run and did not supply artifacts to it.
+
+After the Cargo version was raised to `1.0.0`, the same error occurred with tag
+`1.0.1`. The workflow now derives the release version from the tag. At the time
+of the fix, the next suggested release was `1.0.2` on the updated `main`. Older
+tags still contain the old script; "Re-run jobs" does not update their source
+code. Existing published tags are not moved. Subsequent releases only need a
+new tag.
+
+## Signing
+
+Without certificates, Windows/macOS installers are unsigned. The macOS app
+bundle then has only an ad-hoc signature, without Apple notarization. Gatekeeper
+or SmartScreen can warn about or block installation. For public distribution,
+configure the following GitHub Actions secrets; never commit certificates or
+passwords to the repository.
 
 **macOS:**
 
-- `MACOS_CERTIFICATE_P12`: Base64-kodiertes P12 mit den privaten Schlüsseln für
-  **Developer ID Application** und **Developer ID Installer**.
-- `MACOS_CERTIFICATE_PASSWORD`: Kennwort dieses P12.
-- `MACOS_APP_IDENTITY`: vollständiger Name der Developer-ID-Application-Identität.
-- `MACOS_INSTALLER_IDENTITY`: vollständiger Name der Developer-ID-Installer-Identität.
-- Für Notarisierung zusätzlich `APPLE_ID`, `APPLE_TEAM_ID` und
-  `APPLE_APP_PASSWORD` (app-spezifisches Apple-Kennwort).
+- `MACOS_CERTIFICATE_P12`: Base64-encoded P12 containing the private keys for
+  **Developer ID Application** and **Developer ID Installer**.
+- `MACOS_CERTIFICATE_PASSWORD`: Password for that P12.
+- `MACOS_APP_IDENTITY`: Full name of the Developer ID Application identity.
+- `MACOS_INSTALLER_IDENTITY`: Full name of the Developer ID Installer identity.
+- For notarization, also set `APPLE_ID`, `APPLE_TEAM_ID`, and
+  `APPLE_APP_PASSWORD` (an app-specific Apple password).
 
-Der Build importiert das Zertifikat in einen temporären Runner-Schlüsselbund,
-signiert App und Paket und entfernt den Schlüsselbund auch nach Fehlern.
-Sind die Apple-Zugangsdaten eingerichtet, wartet er auf die Notarisierung und
-heftet das Ticket mit `stapler` an das Paket. Signierfehler brechen den Lauf ab.
+The build imports the certificate into a temporary runner keychain, signs the app
+and package, and removes the keychain even after errors. If Apple credentials
+are configured, it waits for notarization and attaches the ticket to the package
+with `stapler`. Signing errors fail the run.
 
 **Windows:**
 
-- `WINDOWS_CERTIFICATE_PFX`: Base64-kodiertes Authenticode-PFX.
-- `WINDOWS_CERTIFICATE_PASSWORD`: Kennwort des PFX.
-- Actions-Variable `WINDOWS_TIMESTAMP_URL`: RFC-3161-Zeitstempel-URL des
-  Zertifikatsanbieters.
+- `WINDOWS_CERTIFICATE_PFX`: Base64-encoded Authenticode PFX.
+- `WINDOWS_CERTIFICATE_PASSWORD`: Password for the PFX.
+- Actions variable `WINDOWS_TIMESTAMP_URL`: The certificate provider's RFC 3161
+  timestamp URL.
 
-SignTool signiert zuerst die Programmdatei, danach den fertigen Installer, und
-prüft beide Signaturen. Die temporäre PFX-Datei wird anschließend entfernt.
-Hardwaregebundene oder Cloud-Signierschlüssel benötigen die Integration des
-jeweiligen Anbieters anstelle des PFX-Skripts. Der Inno-Uninstaller erhält in
-dieser Variante keine eigene Authenticode-Signatur.
+SignTool signs the executable first, then the completed installer, and verifies
+both signatures. The temporary PFX file is removed afterward. Hardware-bound or
+cloud signing keys require integration with the relevant provider instead of
+the PFX script. In this setup, the Inno uninstaller does not receive its own
+Authenticode signature.
 
 ## Linux: Flatpak
 
-Das bestätigte Format ist ein **Flatpak-Bundle für x86-64**. Der Build verwendet
-Freedesktop Platform/SDK 25.08 und die Rust-SDK-Erweiterung. Cargo-Abhängigkeiten
-werden anhand von `Cargo.lock` vorab in ein isoliertes Quellverzeichnis kopiert;
-Tests und Kompilierung innerhalb des SDK laufen mit `--frozen` ohne Netzwerk.
-Die Quellvorbereitung übernimmt nur die festgelegten Build-Dateien.
+The approved format is a **Flatpak bundle for x86-64**. The build uses
+Freedesktop Platform/SDK 25.08 and the Rust SDK extension. Cargo dependencies
+are vendored into an isolated source directory based on `Cargo.lock`; tests and
+compilation inside the SDK run with `--frozen` and no network access. Source
+preparation includes only the designated build files.
 
-Das Manifest erlaubt Wayland, X11-Fallback und GPU-Zugriff, Netzwerkzugriff auf
-GitHub sowie gezielte D-Bus-Verbindungen für StatusNotifier, Secret Service und
-Desktop-Benachrichtigungen. Es gibt keine Freigabe für das Home-Verzeichnis oder
-den gesamten Session-Bus. Daten liegen unter
-`~/.var/app/io.hush.github/data/hush/`, Tokens im System-Schlüsselbund. Bestehende
-Daten einer Installation außerhalb Flatpak werden nicht automatisch übernommen.
-Tray und Dienst bleiben nach Schließen des Fensters aktiv; der Desktop benötigt
-einen StatusNotifier-Host und einen entsperrten Secret Service.
+The manifest allows Wayland, X11 fallback, GPU access, network access to GitHub,
+and targeted D-Bus connections for StatusNotifier, Secret Service, and desktop
+notifications. It grants no access to the home directory or the entire session
+bus. Data is stored under `~/.var/app/io.hush.github/data/hush/`, and tokens are
+stored in the system keychain. Existing data from installations outside Flatpak
+is not migrated automatically. Tray and service remain active after the window
+closes; the desktop needs a StatusNotifier host and an unlocked Secret Service.
 
 ```sh
 flatpak install --user Hush-1.0.0-linux-x86_64.flatpak
@@ -144,13 +160,12 @@ flatpak run io.hush.github --tray
 flatpak run io.hush.github --status
 ```
 
-Die benötigte Runtime wird bei Bedarf von Flathub geladen. Ein Bundle enthält
-keinen automatischen Updatekanal: Für ein Update die neue `.flatpak`-Datei
-installieren. Es wird kein Flathub-Eintrag veröffentlicht. Die Windows-/macOS-
-Installer richten ebenfalls keinen automatischen Programm-Updater ein.
+The required runtime is downloaded from Flathub if needed. A bundle does not
+provide an automatic update channel: install the new `.flatpak` file to update.
+No Flathub listing is published. The Windows/macOS installers do not set up an
+automatic application updater either.
 
-Für einen lokalen Paketbuild werden `flatpak`, `flatpak-builder` und die Runtime
-benötigt:
+A local package build requires `flatpak`, `flatpak-builder`, and the runtime:
 
 ```sh
 flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -158,7 +173,7 @@ flatpak --user install flathub org.freedesktop.Platform//25.08 org.freedesktop.S
 bash packaging/flatpak/package.sh
 ```
 
-## Lokale Prüfung
+## Local validation
 
 ```sh
 python3 -m unittest discover -s tests -p 'test_packaging.py'
@@ -166,30 +181,31 @@ python3 packaging/version.py
 cargo test --locked --all-targets
 ```
 
-Für einen lokalen Release-Build in einer separaten Quellkopie zuerst
-`python3 packaging/version.py --stamp --tag v1.0.2` ausführen, danach Cargo-Build
-und Paketierung. Der Befehl passt die beiden Cargo-Dateien dieser Kopie an.
+For a local release build in a separate source copy, first run
+`python3 packaging/version.py --stamp --tag v1.0.2`, then build with Cargo and
+package the result. The command updates both Cargo files in that copy.
 
-Auf macOS nach `cargo build --release`:
+On macOS, after `cargo build --release`:
 
 ```sh
 bash packaging/macos/package.sh
 ```
 
-Auf Windows mit Inno Setup 6 nach `cargo build --release`:
+On Windows with Inno Setup 6, after `cargo build --release`:
 
 ```powershell
 ./packaging/windows/package.ps1
 ```
 
-Die Installer müssen auf den jeweiligen Zielsystemen auf Installation, Update,
-Startmenü/App-Identität, Tray und Benachrichtigungen geprüft werden. In der lokalen
-Linux-Umgebung wurden die Windows-/macOS-Paketwerkzeuge und GitHub Actions
-nicht ausgeführt. Der Flatpak-Lauf ist dort durch gesperrte Sandbox-Sockets
-blockiert; Manifest und Quellvorbereitung sind lokal geprüft.
+Test installers on their target systems for installation, updates, Start menu/app
+identity, tray behavior, and notifications. During the original local validation
+on Linux, Windows/macOS packaging tools and GitHub Actions were not run. The
+Flatpak run was blocked by restricted sandbox sockets; its manifest and source
+preparation were validated locally. These historical results do not replace
+validation of a new release on each target system.
 
-Grundlagen: [GitHub-Release-Ereignisse](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release),
-[Inno Setup: Benutzerinstallation](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm),
-[AppUserModelID in Verknüpfungen](https://jrsoftware.org/ishelp/topic_iconssection.htm),
-[Apple-Paketierung](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution),
-[Flatpak-Desktopintegration](https://docs.flatpak.org/en/latest/desktop-integration.html).
+References: [GitHub release events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release),
+[Inno Setup: per-user installation](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm),
+[AppUserModelID in shortcuts](https://jrsoftware.org/ishelp/topic_iconssection.htm),
+[Apple packaging](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution),
+[Flatpak desktop integration](https://docs.flatpak.org/en/latest/desktop-integration.html).

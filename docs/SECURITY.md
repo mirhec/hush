@@ -1,58 +1,67 @@
-# Sicherheitsmodell / vor dem produktiven Einsatz
+# Security model and checks before production use
 
-Hush 0.1.0 ist nicht extern auditiert. Rust-Code, Bibliotheksauflösung, Schlüsselbund und native Installer konnten in der Erstellungsumgebung nicht ausgeführt werden. Dieses Dokument beschreibt implementierte Maßnahmen und verbleibende Grenzen, keine Sicherheitszertifizierung.
+Hush has not undergone an external security audit. This document describes implemented controls and remaining limitations, not a security certification. Build and test results do not replace validation of native credential stores, notification delivery, and installers on each supported platform.
 
-## Datenfluss
+## Data flow
 
 ```text
+System browser -> GitHub device authorization (github.com, HTTPS)
+                          |
+Hush login -> GitHub OAuth endpoints -> access and refresh tokens
+                          |
+                          v
+                   OS credential store
+                          |
+                          v
 GitHub API (api.github.com, HTTPS)
         |
-        | Token im Authorization-Header, nur lesende REST-/GraphQL-Abfragen
+        | Token in the Authorization header; read-only REST/GraphQL queries
         v
-Hush-Hintergrundprozess -> private SQLite-Datenbank -> egui-Fenster
+Hush background process -> private SQLite database -> egui window
         |
-        +-> lokaler Benachrichtigungsdienst des Betriebssystems
+        +-> local operating system notification service
 
-Betriebssystem-Schlüsselbund -> Authentifizierungs-Header im Arbeitsspeicher
-Benutzer klickt Link -> github.com im Systembrowser
+User clicks a notification link -> github.com in the system browser
 ```
 
-Keine fremden API-Hosts oder externen Bildquellen. Keine im Anwendungscode eingebaute Telemetrie, Crash-Upload-, Update- oder Push-Relay-Funktion. Der Browser kann nach einem bewussten Link-Klick seiner eigenen Konfiguration entsprechend kommunizieren; Betriebssysteme können eigene Diagnosedienste haben. Aussagen über Hushs eigenen Code decken nicht automatisch sämtliche transitiven Abhängigkeiten oder das Betriebssystem ab.
+There are no third-party API hosts or external image sources. The application code includes no telemetry, crash upload, updater, or push relay. The system browser handles GitHub sign-in and intentional link clicks according to its own configuration; operating systems may have their own diagnostic services. Statements about Hush's own code do not automatically cover every transitive dependency or the operating system.
 
-## Zugangsdaten
+## Credentials
 
-- Classic-Token nur `notifications`, optional `read:org`; zusätzliche klassische Scopes werden abgewiesen.
-- Optionaler Fine-grained-Token: ausgewählte Ressourcen, ausschließlich benötigte Leserechte. Die UI/Verbindung kontrolliert die Identität, aber nicht die vollständige Berechtigungsmatrix des Fine-grained-Tokens.
-- Speicherung via `keyring`: Linux Secret Service, macOS Keychain, Windows Credential Manager. Kein fallback in JSON, SQLite, Umgebungsvariablen oder `/tmp`.
-- Keine Token-Argumente für Unterprozesse, kein Shell-/curl-Transport. Eingabepuffer werden nach Übergabe nach Möglichkeit mit `Zeroizing` gelöscht; Framework/HTTP-Bibliothek können trotzdem weitere Kopien im Speicher besitzen. Keine Garantie gegen Speicherabbilder, Debugger oder kompromittierte Prozesse desselben Benutzers.
-- `HeaderValue::set_sensitive(true)` verhindert die normale Debug-Ausgabe des Auth-Headers. HTTP-Fehler werden auf eigene, tokenfreie Fehlertypen abgebildet.
-- Schlüsselbund und SQLite können nicht atomar gemeinsam committen. Scheitert das Speichern dazwischen, kann ein Eintrag im Schlüsselbund verbleiben. Der Fehler wird nicht als erfolgreicher Login ausgegeben.
-- „Konto trennen“ invalidiert die Datenbank zuerst, dann werden beide Schlüsselbund-Einträge entfernt. Löschfehler werden angezeigt. Zum vollständigen Widerruf Tokens zusätzlich direkt auf GitHub widerrufen.
+- The default OAuth device flow requests `notifications`, `repo`, `read:org`, and `offline_access`. It uses a public client ID and no client secret. The user confirms the login directly on GitHub, without giving Hush a GitHub password.
+- **The OAuth `repo` scope includes write access to private and public repositories.** GitHub does not provide the narrower general repository read scope needed to combine all of Hush's private-repository features into this single OAuth login. Hush itself does not issue repository mutations, but a stolen token could be used outside Hush with its full granted permissions.
+- OAuth access and refresh tokens are stored in the OS credential store. Expiring access tokens are renewed with the refresh token. Revoked or expired credentials may require another browser login.
+- The advanced manual-token mode retains a classic token limited to `notifications` and optionally `read:org`; additional classic scopes are rejected in that mode. Its optional fine-grained token should cover selected resources with only the required read permissions. The UI and connection checks verify identity, but not the fine-grained token's complete permission matrix.
+- Credentials are stored through `keyring`: Linux Secret Service, macOS Keychain, and Windows Credential Manager. There is no fallback to JSON files, SQLite, environment variables, or `/tmp`.
+- Tokens are never passed as subprocess arguments or transported through a shell or curl. Input buffers are cleared with `Zeroizing` after handoff where possible; the framework and HTTP library may still hold additional copies in memory. There is no protection guarantee against memory dumps, debuggers, or compromised processes running as the same user.
+- `HeaderValue::set_sensitive(true)` suppresses normal debug output of the authentication header. HTTP errors are mapped to application-specific error types that contain no tokens.
+- The credential store and SQLite cannot commit atomically together. If saving fails between the two operations, a credential store entry may remain. The error is not reported as a successful login.
+- Disconnecting the account invalidates the database first, then removes its local credentials. Deletion failures are reported. To revoke access completely, also revoke the OAuth authorization or personal access tokens directly on GitHub.
 
-## Netzwerk
+## Network
 
-API-Ziele müssen exakt `https://api.github.com` sein, ohne Userinfo, abweichenden Port oder Fragment. Redirects werden vollständig abgewiesen, auch bei umbenannten Repositories; dies kann die Funktion einschränken, verhindert aber eine Weiterleitung von Zugangsdaten. Öffnen im Browser verlangt exakt `https://github.com`.
+Repository API targets must be exactly `https://api.github.com`, without user information, a different port, or a fragment. Redirects are rejected entirely, including those for renamed repositories; this can limit functionality but prevents credentials from being forwarded. Browser links must use exactly `https://github.com`.
 
-Nur GET-Requests und zwei feste, nur lesende GraphQL-Abfragestrukturen über POST `/graphql`. Kein generischer Mutations- oder Ausführungs-Endpunkt. Standard-Proxyerkennung ist deaktiviert; Unternehmensproxys werden nicht unterstützt. TLS-Prüfungen werden nicht abgeschaltet. Antwortgröße, Dauer, Seitenzahl und Request-Budget sind begrenzt. IDs/Repository-Pfade werden validiert. Remote-Inhalte werden nicht als HTML, Skript, Shellbefehl oder egui-Markup ausgeführt.
+Repository access uses only GET requests and two fixed, read-only GraphQL query structures through POST `/graphql`. OAuth login and renewal additionally use GitHub's fixed HTTPS device-code and access-token endpoints under `github.com`. There is no generic mutation or execution endpoint. Automatic proxy detection is disabled; corporate proxies are unsupported. TLS verification is never disabled. Response size, duration, page count, and request budget are bounded. IDs and repository paths are validated. Remote content is never executed as HTML, scripts, shell commands, or egui markup.
 
-Die App scannt nicht alle erreichbaren privaten Repositories nach Inhalten; für Reviews kann sie aber eine Benutzersuche durchführen, und für die benachrichtigten Threads werden Kommentare/Reviews gelesen. Den tatsächlichen Umfang bestimmen Token-Rechte und die konfigurierten Regeln. Sie kann damit sensible Informationen erhalten, auch wenn Banner standardmäßig anonym bleiben.
+The app does not scan the contents of every accessible private repository. It can search the user's pull requests for reviews, however, and reads comments and reviews for discovered notification threads. Token permissions and configured rules determine the actual scope. Hush can therefore receive sensitive information even when banner contents remain private by default. Organization policies and SSO requirements can restrict access independently of a successful login.
 
-## Lokale Daten und Bildschirmprivatsphäre
+## Local data and on-screen privacy
 
-SQLite speichert Repository-Namen, Titel, Akteure und gekürzte Ereignis-/Kommentarinhalte sowie technische Thread-Aufgaben. **Die Datenbank ist nicht verschlüsselt.** Das Datenverzeichnis wird unter Unix auf `0700`, die Hauptdatei auf `0600` gesetzt. WAL-/SHM-Dateien liegen im privaten Verzeichnis. Windows verwendet das lokale Benutzerprofil und dessen ACLs, keine eigens gehärtete zusätzliche ACL. Kein geteilter `/tmp`-Fallback.
+SQLite stores repository names, titles, actors, shortened event and comment contents, and technical thread tasks. **The database is not encrypted.** On Unix, the data directory is set to `0700` and the main file to `0600`. WAL and SHM files live in the private directory. Windows uses the local user profile and its ACLs, without an additional custom hardened ACL. There is no shared `/tmp` fallback.
 
-Der letzte Verzeichnispfad und Datendateien werden auf Symlinks geprüft. Das ist keine vollständige Abwehr gegen einen privilegierten Angreifer, races in kontrollierten Parent-Verzeichnissen oder bereits kompromittierte gleiche Benutzerrechte.
+The final directory component and data files are checked for symbolic links. This does not fully defend against privileged attackers, races in attacker-controlled parent directories, or an already compromised process with the same user permissions.
 
-Banner-Inhalte sind standardmäßig privat. Titel/Repo/Akteur werden nur nach ausdrücklichem Einschalten der Inhaltsvorschau gesendet. Das Betriebssystem kann Benachrichtigungen speichern, auf dem Sperrbildschirm anzeigen oder bei Bildschirmfreigabe sichtbar machen. Entsprechende Systemeinstellungen gelten zusätzlich.
+Banner contents are private by default. Titles, repository names, and actors are sent only after content previews are explicitly enabled. The operating system may store notifications, display them on the lock screen, or expose them during screen sharing. Its notification settings apply in addition to Hush's settings.
 
-„Verlauf leeren“ löscht sichtbare Ereignisse logisch, behält aber IDs/Cursor zur Dublettenvermeidung. „Konto trennen“ löscht zusätzlich Aufgaben und Cursor. SQLite-WAL, freie Datenbankseiten, Backups oder OS-Benachrichtigungshistorien werden dadurch nicht sicher überschrieben. Bei hohen Geheimhaltungsanforderungen Festplattenverschlüsselung und ein passendes Lösch-/Backupkonzept einsetzen.
+Clearing history logically deletes visible events but retains IDs and cursors to prevent duplicates. Disconnecting the account also deletes tasks and cursors. Neither operation securely overwrites SQLite WAL files, free database pages, backups, or OS notification history. For highly confidential data, use disk encryption and an appropriate deletion and backup policy.
 
-## Integrität / Lieferkette
+## Integrity and supply chain
 
-Keine privilegierte Installation vorgesehen. Installer verändern nur die dort beschriebenen Benutzerdaten, Startmenü-/Launcher-Einträge und auf ausdrückliche Anforderung Autostart. Vor Ausführung lesen. Die Windows-COM-/AppID- und macOS-Signierungswege sind noch nativ zu validieren.
+Hush itself runs as the logged-in user. The Windows installer and Linux Flatpak installation are scoped to that user; the macOS package installs `/Applications/Hush.app` and may require administrator authorization. Packaging scripts install application files and platform launcher entries, with autostart enabled only on explicit request. Review the scripts before running them. Native Windows COM/AppID behavior and macOS signing and installation still require validation on the target systems.
 
-Die Build-Workflows haben nur `contents: read`; Checkout-Credentials werden nicht behalten. Verwendete GitHub Actions sind auf konkrete Commit-SHAs gepinnt. Es liegt noch **keine aufgelöste Cargo.lock** vor; CI muss diese erzeugen, prüfen und für künftige Builds versionieren. Die erste Auflösung ist nicht reproduzierbar vorgegeben. `cargo audit` ist als Workflow vorhanden, aber nicht gelaufen. Das MIT-Lizenzdokument gilt für den eigenen Code; Abhängigkeiten behalten ihre Lizenzen.
+The release workflow grants `contents: read` to validation and build jobs; only the publication job receives `contents: write` to attach installers to the release. Checkout credentials are not retained. GitHub Actions are pinned to specific commit SHAs. `Cargo.lock` is versioned, and CI uses locked dependency resolution for tests and builds. The release tag updates only Hush's package version in the build checkout, preserving dependency versions and checksums. The validation stage runs `cargo audit` before platform builds; consult the actual workflow results for each release rather than assuming an audit passed. The MIT license covers Hush's own code; dependencies retain their respective licenses.
 
-## Noch notwendige Freigabeprüfungen
+## Release validation
 
-Erfolgreiche Rust-Builds, Tests und Clippy auf allen Zielen; Abhängigkeitsaudit; Token-Rechte im GitHub-Dialog; Zustellung unter Niri/DMS, Windows und beiden macOS-Architekturen; Schlüsselbund gesperrt/entsperrt; Rate-Limit-/Offline-/Neustarttests; Konto-Trennung während laufender Requests. Erst danach für echte sensible Repositories einsetzen. Keine CVE-freie, vollständig sichere oder lückenlos zustellende Anwendung behaupten.
+Validate Rust builds, tests, and Clippy on every target; the dependency audit; permissions in GitHub's authorization UI; OAuth cancellation, token expiration, renewal, and revocation; delivery on Niri/DMS, Windows, and both macOS architectures; locked and unlocked credential stores; rate-limit, offline, and restart behavior; and account disconnection during active requests. Complete the relevant target-system checks before using Hush with sensitive repositories. Do not claim that the application is free of CVEs, completely secure, or guaranteed to deliver every notification.

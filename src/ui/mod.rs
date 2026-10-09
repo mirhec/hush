@@ -12,6 +12,7 @@ use crate::{
     engine,
     filter::safe_web_url,
     model::{Config, Event, Kind, Repo, RuntimeStatus},
+    oauth,
     storage::{Paths, Store},
     tray,
 };
@@ -22,7 +23,11 @@ use eframe::egui::{
 };
 use icons::Icon;
 use std::{
-    sync::mpsc::{self, Receiver},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver},
+    },
     time::{Duration, Instant},
 };
 use theme::{Palette, label, primary, section};
@@ -40,6 +45,22 @@ enum SettingsTab {
     Notifications,
     Account,
     Diagnostics,
+}
+
+enum OAuthMessage {
+    Code {
+        user_code: String,
+        verification_uri: String,
+        expires_at: Instant,
+    },
+    Finished(Result<oauth::Credentials, String>),
+}
+struct OAuthLogin {
+    events: Receiver<OAuthMessage>,
+    cancel: Arc<AtomicBool>,
+    user_code: Option<String>,
+    verification_uri: Option<String>,
+    expires_at: Option<Instant>,
 }
 
 pub struct HushApp {
@@ -63,6 +84,7 @@ pub struct HushApp {
     light: bool,
     message: Option<Toast>,
     job: Option<Receiver<Result<Config, String>>>,
+    oauth_login: Option<OAuthLogin>,
     last_poll: Instant,
     confirm_disconnect: bool,
     confirm_clear: bool,
@@ -126,6 +148,7 @@ impl HushApp {
             light: false,
             message: None,
             job: None,
+            oauth_login: None,
             last_poll: Instant::now() - Duration::from_secs(2),
             confirm_disconnect: false,
             confirm_clear: false,
@@ -190,6 +213,7 @@ impl HushApp {
         });
     }
     fn quit(&mut self, ctx: &egui::Context) {
+        self.cancel_oauth();
         let r = self.store.as_ref().map_or(Ok(()), |s| {
             s.request_stop()?;
             #[cfg(target_os = "linux")]
@@ -203,6 +227,7 @@ impl HushApp {
         tray::show_window(ctx);
     }
     fn poll(&mut self, ctx: &egui::Context) {
+        self.poll_oauth();
         if let Some(rx) = &self.service_job {
             match rx.try_recv() {
                 Ok(result) => {
@@ -297,10 +322,12 @@ impl HushApp {
                         Ok(false) => {}
                         Err(error) => self.message = Some(Toast::new(format!("{error:#}"), true)),
                     }
-                    if let Ok(config) = store.config() {
-                        self.draft.paused_until = config.paused_until;
-                        self.config = config;
-                    }
+                }
+                // Reload on every platform, including when a keyring cleanup failed after
+                // an account change had already been committed to SQLite.
+                if let Ok(config) = store.config() {
+                    self.draft.paused_until = config.paused_until;
+                    self.config = config;
                 }
                 match store.take_flag("show_window") {
                     Ok(true) => {
@@ -360,12 +387,19 @@ impl HushApp {
             c.manual_teams = Repo::list(&self.teams_text)?;
             c.validate()?;
             // Account and pause are managed separately, not overwritten by an old settings draft.
-            c.login = self.config.login.clone();
-            c.has_detail_token = self.config.has_detail_token;
-            c.read_org = self.config.read_org;
-            c.paused_until = self.config.paused_until;
+            let current = self
+                .store
+                .as_ref()
+                .map(Store::config)
+                .transpose()?
+                .unwrap_or_else(|| self.config.clone());
+            c.login = current.login;
+            c.has_detail_token = current.has_detail_token;
+            c.oauth = current.oauth;
+            c.read_org = current.read_org;
+            c.paused_until = current.paused_until;
             if let Some(s) = &mut self.store {
-                s.save_config(&c)
+                s.save_preferences(&c)
             } else {
                 Ok(c)
             }
@@ -387,8 +421,102 @@ impl HushApp {
             Err(e) => self.message = Some(Toast::new(e.to_string(), true)),
         }
     }
+    fn start_oauth(&mut self) {
+        if self.demo || self.job.is_some() || self.oauth_login.is_some() {
+            return;
+        }
+        let Some(client_id) = oauth::client_id() else {
+            self.message = Some(Toast::new(
+                "GitHub-Anmeldung ist in diesem Build nicht konfiguriert.".into(),
+                true,
+            ));
+            return;
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        let worker_cancel = cancel.clone();
+        let (send, events) = mpsc::channel();
+        self.oauth_login = Some(OAuthLogin {
+            events,
+            cancel,
+            user_code: None,
+            verification_uri: None,
+            expires_at: None,
+        });
+        self.message = None;
+        std::thread::spawn(move || {
+            let result = (|| -> anyhow::Result<oauth::Credentials> {
+                let code = oauth::start(client_id)?;
+                anyhow::ensure!(
+                    !worker_cancel.load(Ordering::Relaxed),
+                    "Anmeldung abgebrochen."
+                );
+                send.send(OAuthMessage::Code {
+                    user_code: code.user_code.clone(),
+                    verification_uri: code.verification_uri.clone(),
+                    expires_at: Instant::now() + Duration::from_secs(code.expires_in),
+                })
+                .map_err(|_| anyhow::anyhow!("Anmeldung abgebrochen."))?;
+                oauth::poll(client_id, &code, &worker_cancel)
+            })();
+            // Only the UI may start credential persistence. Closing/cancelling drops this channel
+            // and its zeroizing credentials instead of completing an abandoned login in the background.
+            let _ = send.send(OAuthMessage::Finished(
+                result.map_err(|error| error.to_string()),
+            ));
+        });
+    }
+    fn cancel_oauth(&mut self) {
+        if let Some(login) = self.oauth_login.take() {
+            login.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+    fn poll_oauth(&mut self) {
+        let messages: Vec<_> = self
+            .oauth_login
+            .as_ref()
+            .map(|login| login.events.try_iter().collect())
+            .unwrap_or_default();
+        for message in messages {
+            if self.oauth_login.is_none() {
+                break;
+            }
+            match message {
+                OAuthMessage::Code {
+                    user_code,
+                    verification_uri,
+                    expires_at,
+                } => {
+                    if let Some(login) = &mut self.oauth_login {
+                        login.user_code = Some(user_code);
+                        login.verification_uri = Some(verification_uri.clone());
+                        login.expires_at = Some(expires_at);
+                    }
+                    self.open(&verification_uri);
+                }
+                OAuthMessage::Finished(result) => {
+                    self.oauth_login = None;
+                    match result {
+                        Ok(credentials) => {
+                            let Some(paths) = self.paths.clone() else {
+                                continue;
+                            };
+                            let (send, receive) = mpsc::channel();
+                            self.job = Some(receive);
+                            self.token.zeroize();
+                            self.details_token.zeroize();
+                            std::thread::spawn(move || {
+                                let result = engine::connect_oauth(&paths, credentials);
+                                let _ = send.send(result.map_err(|error| error.to_string()));
+                            });
+                        }
+                        Err(error) => self.message = Some(Toast::new(error, true)),
+                    }
+                }
+            }
+        }
+    }
     fn account_job(&mut self, disconnect: bool) {
-        if self.demo || self.job.is_some() {
+        if self.demo || self.job.is_some() || self.oauth_login.is_some() {
             return;
         }
         let Some(paths) = self.paths.clone() else {
@@ -414,23 +542,23 @@ impl HushApp {
         });
     }
     fn pause(&mut self) {
-        let mut c = self.config.clone();
-        c.paused_until = if c.paused() {
-            0
+        let result = if let Some(store) = &mut self.store {
+            store.toggle_pause()
         } else {
-            Utc::now().timestamp() + 1800
-        };
-        let result = if let Some(s) = &mut self.store {
-            s.save_config(&c)
-        } else {
-            Ok(c)
+            let mut config = self.config.clone();
+            config.paused_until = if config.paused() {
+                0
+            } else {
+                Utc::now().timestamp() + 1800
+            };
+            Ok(config)
         };
         match result {
-            Ok(c) => {
-                self.config = c;
+            Ok(config) => {
+                self.config = config;
                 self.draft.paused_until = self.config.paused_until;
             }
-            Err(e) => self.message = Some(Toast::new(e.to_string(), true)),
+            Err(error) => self.message = Some(Toast::new(error.to_string(), true)),
         }
     }
     fn open(&mut self, url: &str) -> bool {
@@ -526,8 +654,8 @@ impl HushApp {
                 .any(|warning| warning.contains("HTTP 403") || warning.contains("HTTP 404"));
         if !self.demo && access_error {
             ui.horizontal_wrapped(|ui| {
-                label(ui, if self.config.has_detail_token {
-                    "GitHub-Zugriff fehlgeschlagen. Repository-Auswahl und Token-Rechte prüfen."
+                label(ui, if self.config.has_detail_token || self.config.oauth {
+                    "GitHub-Zugriff fehlgeschlagen. Berechtigungen und Organisationsfreigaben prüfen."
                 } else {
                     "Repository-Zugriff fehlgeschlagen. Für private Repositories einen Detail-Token hinterlegen."
                 }, 12., p.amber);
@@ -774,6 +902,7 @@ impl eframe::App for HushApp {
 }
 impl Drop for HushApp {
     fn drop(&mut self) {
+        self.cancel_oauth();
         self.token.zeroize();
         self.details_token.zeroize();
     }

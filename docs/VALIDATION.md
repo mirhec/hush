@@ -1,153 +1,237 @@
-# Validierungsstand — 9. Oktober 2026
+# Validation record — October 9, 2026
 
-## Schmaler Posteingang
+This document records checks performed at specific implementation stages. Older
+results describe the code and environment at that time, including features that
+have since changed. They are not a claim that every check was rerun against the
+latest revision.
 
-- **59 Rust-Tests erfolgreich** mit `cargo test --locked --offline --all-targets`.
-  Geprüft sind unter anderem der Ungelesen-Standard, das Zusammenspiel von
-  Filtermenü und Suche, Klick → GitHub → dauerhaft gespeicherter Lesestatus,
-  ungelesene Einträge bei Browser-/Linkfehlern, das Markieren aller Einträge als
-  gelesen und die Kompatibilität mit ehemals archivierten Daten.
-- Layout- und Interaktionstests prüfen 360 und 440 Pixel Fensterbreite,
-  56 Pixel hohe Einträge bei langen Titeln, sichtbare Einstellungsaktionen bei
-  360 × 480 und den Erhalt von Entwürfen bei Tab- und Seitenwechseln.
-- Clippy erfolgreich mit fünf bereits bestehenden Hinweisen; Linux-Release-Build
-  erfolgreich. Der ausführbare Build liegt unter `target/release/hush`.
-- Elf Ansichten aus den tatsächlichen egui-Zeichendaten exportiert. Schmaler
-  Posteingang in Hell/Dunkel, Filtermenü, Einstellungen bei 440 × 640 und
-  360 × 480, Konto und Diagnose bei 360 × 480 visuell geprüft.
-  Der Export-Test wurde separat ausgeführt; der isolierte D-Bus-Test bleibt
-  wegen der lokalen Sandbox übersprungen.
+## OAuth browser login and English documentation
 
-[Abbildungen und Wiederholung der Layoutprüfung](DESIGN.md#darstellung-prüfen).
-Die Bilder verwenden echte egui-Geometrie und Font-Texturen mit Demoinhalten.
-Browser-Übergabe und lokale Lesestatus-Speicherung wurden mit einem ersetzten
-Browser-Aufruf und temporärer Datenbank getestet. Eine native Desktop-Sitzung,
-reales Browserstartverhalten und verschiedene Betriebssystem-Skalierungen wurden
-hier nicht geprüft. Die laufende Installation und persönliche Kontodaten wurden
-für diese Überarbeitung nicht verändert.
+- **78 Rust tests passed** with `cargo test --locked --offline --all-targets`,
+  including nine device-flow protocol tests, cancellation after token delivery,
+  token expiry handling, OAuth/manual scope separation, and concurrent account,
+  preference, and pause updates. The isolated D-Bus test remains skipped locally;
+  native UI capture is run separately.
+- **10 packaging tests passed**, including forwarding the public OAuth client ID
+  into the Flatpak build without copying access tokens or other environment data.
+- Clippy and the local Linux release build passed. The five existing Clippy
+  suggestions outside the new OAuth implementation remain.
+- The account confirmation screen was rendered from actual egui geometry at
+  360 × 480 and inspected with a synthetic device code. See the
+  [OAuth account screen](screenshots/oauth-account.png).
+- README, technical documentation, and code comments use English. Product UI
+  text remains German. Historical test reports retain their original results.
 
-## Release-Version aus dem Git-Tag
+The public Hush OAuth client ID is configured. A live request to GitHub's device
+code endpoint with the requested scopes returned HTTP 200, a valid GitHub
+verification URL, and the polling interval, confirming that the registration
+accepts Device Flow. No user authorized that disposable verification request.
 
-Der Release-Workflow übernimmt jetzt die Version aus dem Tag in die Cargo-Dateien
-jedes Build-Verzeichnisses. Der eingecheckte Entwicklungsstand muss dafür nicht
-mehr pro Release angepasst werden. Die Änderung wird nicht zurückcommittet.
+**A complete live sign-in and renewal have not been tested.** Protocol tests use
+synthetic responses and do not prove organization approval, SSO, real credential
+storage, or browser authorization on any target OS. Existing manual-token
+connections remain compatible.
 
-- **Neun Paketprüfungen erfolgreich**, einschließlich Übernahme von `1.0.1`,
-  `v1.0.2` und Prereleases, wiederholter Ausführung, unveränderter Abhängigkeiten
-  und Prüfsummen, Ablehnung ungültiger Tags vor Dateiänderungen und Export der
-  Installer-Versionen über `GITHUB_ENV`.
-- In einer separaten Quellkopie die Cargo-Version von `1.0.0` über den Tag
-  `v1.0.2` gesetzt. Dort alle neun Paketprüfungen erneut erfolgreich, einschließlich
-  Flatpak-Quellvorbereitung mit passender Cargo- und AppStream-Version.
-- `cargo metadata --locked --offline --no-deps` akzeptiert die vorbereiteten
-  Dateien. Das dort mit `cargo run --locked --offline --no-default-features`
-  gebaute Programm gibt mit `--version` tatsächlich **`Hush 1.0.2`** aus.
-- Workflow-YAML, Shellsyntax, ausschließliche Release-Auslöser, Job-Abhängigkeiten
-  und Übernahme der Tag-Version vor Cargo in beiden Build-Verzeichnissen geprüft.
+## Narrow inbox
 
-Die komplette neue Installer-Pipeline ist noch nicht auf GitHub ausgeführt.
-Für den ersten Lauf ein neues Release auf dem aktualisierten `main` erstellen;
-ältere Tags enthalten noch die frühere Versionsprüfung.
+- **59 Rust tests passed** with `cargo test --locked --offline --all-targets`.
+  Coverage includes unread-only defaults, the interaction between the filter
+  menu and search, click → GitHub → persisted read state, entries remaining
+  unread after browser/link errors, marking all entries as read, and
+  compatibility with previously archived data.
+- Layout and interaction tests cover 360- and 440-pixel window widths,
+  56-pixel rows with long titles, visible settings actions at 360 × 480, and
+  preserving drafts when switching tabs or pages.
+- Clippy passed with five pre-existing warnings; the Linux release build
+  succeeded. The executable is at `target/release/hush`.
+- Eleven views were exported from the actual egui drawing data. Visual checks
+  covered the narrow inbox in light/dark mode, the filter menu, settings at
+  440 × 640 and 360 × 480, and account/diagnostics views at 360 × 480.
+  The export test ran separately; the isolated D-Bus test remained skipped
+  because of the local sandbox.
 
-### Vorherige Release-Fehler
+[Images and instructions for repeating the layout check](DESIGN.md#checking-the-layout).
+The images use actual egui geometry and font textures with demo content.
+Browser handoff and local read-state persistence were tested with a substituted
+browser call and a temporary database. A native desktop session, actual browser
+launch behavior, and different operating-system scale factors were not tested
+here. The running installation and personal account data were not changed for
+this revision.
 
-Der [Release-Lauf 1.0.0](https://github.com/mirhec/hush/actions/runs/37794586738)
-scheiterte am Unterschied zwischen Tag `1.0.0` und Cargo-Version `0.1.0`.
-Nach deren Angleichung trat mit Tag `1.0.1` gegenüber Cargo-Version `1.0.0`
-derselbe Fehler auf. Das automatische Übernehmen des Tags behebt diese Ursache.
+## Release version derived from the Git tag
 
-Beim früheren [Main-Lauf](https://github.com/mirhec/hush/actions/runs/37794473971)
-waren beim damaligen Abruf Windows und macOS Apple Silicon einschließlich
-Paketierung erfolgreich, Linux und macOS Intel noch nicht abgeschlossen.
-Der isolierte Linux-D-Bus-Test war erfolgreich. Diese Ergebnisse belegen keine
-manuelle Installation oder Desktop-Interaktion auf den Zielsystemen.
+The release workflow applies the tag's version to the Cargo files in each build
+directory. The checked-in development version no longer needs to be updated for
+each release. The change is not committed back.
 
-## Aktueller Stand: Oberfläche, Tray-Klick, Releases und Benachrichtigungen
+- **Nine packaging checks passed**, including stamping `1.0.1`, `v1.0.2`, and
+  prereleases, repeated execution, unchanged dependencies and checksums,
+  rejection of invalid tags before file changes, and export of installer
+  versions through `GITHUB_ENV`.
+- In a separate source copy, the Cargo version was changed from `1.0.0` using
+  tag `v1.0.2`. All nine packaging checks passed again there, including Flatpak
+  source preparation with matching Cargo and AppStream versions.
+- `cargo metadata --locked --offline --no-deps` accepted the prepared files.
+  The application built there with
+  `cargo run --locked --offline --no-default-features` returned **`Hush 1.0.2`**
+  when called with `--version`.
+- Workflow YAML, shell syntax, release-only triggers, job dependencies, and
+  stamping before Cargo in both build directories were checked.
 
-- **52 Rust-Tests erfolgreich** mit `cargo test --locked --offline --all-targets`.
-  Dazu gehören feste Einstellungsbreiten und Schalterausrichtung bei 360/540/740 px,
-  Maus-/Tastaturbedienung, Toast-Ablauf, StatusNotifier-Aktivierung und D-Bus-
-  Menütypen sowie der Import von drei neuen Issues bis in die Zustellwarteschlange.
-- Der zusätzliche echte D-Bus-Integrationstest ist lokal **übersprungen**: Diese
-  Sandbox erlaubt weder einen privaten D-Bus-Socket noch den Flatpak-Netzwerk-
-  Namespace (`Operation not permitted`). Die Linux-CI führt ihn ausdrücklich in
-  `dbus-run-session` aus; er prüft Klick, Menü, Host-Neustart und Abmeldung.
-- **5 Paketprüfungen erfolgreich**: Versions-/Tag-/Lockfile-Abgleich,
-  Prerelease-Metadaten, ungültige Versionen, App-Identität und isolierte Flatpak-
-  Quellvorbereitung einschließlich Berechtigungen und Release-Metadaten.
-- Workflow-YAML, Shellsyntax, Desktop-Datei und Vorschau-JavaScript geprüft.
-- **23 Browserprüfungen** der aktualisierten HTML-Vorschau über Chrome DevTools
-  erfolgreich, einschließlich ausgerichteter Schalter, Suche/Archiv, privater
-  Banner-Vorschau und automatisch verschwindender Toasts. Das sind keine nativen
-  egui-Screenshots. Der frühere Playwright-Bericht unten beschreibt den alten Stand.
-- Linux-Release-Datei `target/release/hush` neu gebaut. Clippy erfolgreich mit
-  Hinweisen im bestehenden Code; Windows-/macOS-Builds und GitHub Actions lokal
-  nicht ausgeführt. Die nativen Installationen und der Flatpak-Paketbuild sind
-  noch auf den Zielsystemen bzw. in CI zu bestätigen.
+At this validation stage, the complete new installer pipeline had not yet run
+on GitHub. Its first run required a new release on the updated `main`; older
+tags still contained the previous version check.
 
-Die laufende Installation wurde ausschließlich lesend diagnostiziert. Der
-Hintergrunddienst hatte einen aktuellen Heartbeat, aber alle fünf konfigurierten
-Issue-Repositories antworteten mit HTTP 404. Es war kein Detail-Token eingerichtet;
-kein Issue war importiert. Namen, Inhalte und Zugangsdaten wurden nicht in diese
-Dokumentation übernommen. Repository-Zugriffsfehler stehen jetzt direkt in der UI.
-Ein Detail-Token kann ohne erneute Eingabe des gespeicherten Benachrichtigungs-
-Tokens ergänzt werden. Danach werden zurückgestellte Thread-Abfragen sofort
-wieder freigegeben. Zustellfehler verschwinden erst nach einer tatsächlichen
-Erfolgszustellung oder einem erfolgreichen Test, nicht bei leerer Warteschlange.
-Die Tests prüfen 404 ohne Cursor-Fortschritt, drei neue Issues nach einem stillen
-Erstimport, fehlgeschlagene/erfolgreiche Zustellung und Deduplizierung.
+### Previous release failures
 
-Die erfolgreiche Abfrage privater GitHub-Repositories und tatsächliche
-Desktop-Banner bleiben unbestätigt, bis ein berechtigter Detail-Token in der App
-hinterlegt und die Zustellung in der Desktop-Sitzung geprüft wurde.
+The [1.0.0 release run](https://github.com/mirhec/hush/actions/runs/37794586738)
+failed because tag `1.0.0` differed from Cargo version `0.1.0`. After they were
+aligned, the same error occurred with tag `1.0.1` versus Cargo version `1.0.0`.
+Automatically applying the tag fixes that cause.
 
+When the earlier [main-branch run](https://github.com/mirhec/hush/actions/runs/37794473971)
+was inspected, Windows and macOS Apple Silicon, including packaging, had
+succeeded; Linux and macOS Intel were still running. The isolated Linux D-Bus
+test passed. These results do not demonstrate manual installation or desktop
+interaction on the target systems.
 
-## Frühere Prüfungen bei der ursprünglichen Erstellung
+## Earlier stage: UI, tray click, releases, and notifications
 
-**25 Browserprüfungen bestanden** gegen die separate `preview/hush-preview.html`, in headless Chromium über Python Playwright. Vollständige Einzelliste: [preview-test-results.json](preview-test-results.json). Suche und Leerezustand, Filter, Ungelesen-Zähler, Auswahl/Lesestatus, Archiv/Rückgängig, Tastaturbedienung, Ruhepause, Hell-/Dunkelmodus, Einstellungen, Repository-Validierung, simulierte private Banner und ein 1000-Pixel-Fenster waren Teil der Prüfung. Es wurden keine JavaScript-Laufzeitfehler oder Netzwerk-Requests dieser Vorschau registriert.
+- **52 Rust tests passed** with `cargo test --locked --offline --all-targets`.
+  They included fixed settings widths and toggle alignment at 360/540/740 px,
+  mouse/keyboard interaction, toast expiry, StatusNotifier activation and D-Bus
+  menu types, and importing three new issues into the delivery queue.
+- The additional real D-Bus integration test was **skipped** locally: the sandbox
+  allowed neither a private D-Bus socket nor the Flatpak network namespace
+  (`Operation not permitted`). Linux CI explicitly runs it in `dbus-run-session`;
+  it checks clicks, menus, host restart, and unregistration.
+- **5 packaging checks passed**: version/tag/lockfile consistency, prerelease
+  metadata, invalid versions, app identity, and isolated Flatpak source
+  preparation, including permissions and release metadata.
+- Workflow YAML, shell syntax, the desktop file, and preview JavaScript were
+  checked.
+- **23 browser checks** of the updated HTML preview passed through Chrome
+  DevTools, including aligned toggles, search/archive, the private banner
+  preview, and automatically disappearing toasts. These were not native egui
+  screenshots. The earlier Playwright report below describes the original
+  implementation.
+- The Linux release executable `target/release/hush` was rebuilt. Clippy passed
+  with warnings in existing code; Windows/macOS builds and GitHub Actions were
+  not run locally. Native installations and the Flatpak package build still
+  needed confirmation on the target systems or in CI.
 
-**13 statische/Formatprüfungen bestanden:** beide TOML-Dateien und beide Workflow-YAML-Dateien parsebar, vier Shellskripte mit `bash -n`, macOS-Plist parsebar, JavaScript mit `node --check`, SQLite-Schema aus `storage.rs` in Python SQLite angelegt, keine `todo!`-/`unimplemented!`-Makros im Rust-Anwendungscode, keine zusätzlichen Schriftdateien beigefügt. Vollständige Liste: [static-test-results.json](static-test-results.json).
+The running installation was diagnosed through read-only access. The background
+service had a current heartbeat, but all five configured issue repositories
+returned HTTP 404. No details token was configured, and no issue had been
+imported. Names, content, and credentials were not included in this document.
+That implementation exposed repository access errors directly in the UI and
+allowed a details token to be added without re-entering the stored notifications
+token. Deferred thread requests were then released immediately. Delivery errors
+were cleared only after actual successful delivery or a successful test, not
+when the queue was empty. Tests covered 404 responses without cursor progress,
+three new issues after a silent initial import, failed/successful delivery, and
+deduplication.
 
-Die vier Screenshots in `preview/screenshots/` wurden aus der HTML-Datei erzeugt. Dunkler Posteingang und Einstellungen wurden visuell auf Lesbarkeit, Positionierung und störende Überlagerungen geprüft. Diese Bilder validieren **nicht** das Rendering des nativen egui-Fensters.
+At this stage, successful access to private GitHub repositories and actual
+desktop banners remained unconfirmed pending a details token with sufficient
+permissions and delivery testing in the desktop session. This describes the
+historical token-based account setup.
 
-## Rust-Prüfung nach Tray- und Dienstkorrektur
+## Earlier checks during initial creation
 
-Am 8. Oktober 2026 unter Linux x86_64 mit Rust 1.99.0 geprüft. Die vorhandene `Cargo.lock` wurde um die Tray-Abhängigkeiten ergänzt; Cargo akzeptiert sie mit `--locked`.
+**25 browser checks passed** against the separate `preview/hush-preview.html`
+using headless Chromium through Python Playwright. Full list:
+[preview-test-results.json](preview-test-results.json). Coverage included search
+and empty states, filters, unread counts, selection/read state, archive/undo,
+keyboard interaction, pause, light/dark mode, settings, repository validation,
+simulated private banners, and a 1000-pixel window. No JavaScript runtime errors
+or network requests were recorded for this preview.
 
-Der bisherige Dienststart wurde mit einem frischen isolierten Datenverzeichnis reproduziert: Prozessende mit `Hush: database is locked`, ohne Token oder GitHub-Zugriff. Der neue Konkurrenztest schlug vor der Korrektur an derselben Stelle fehl und besteht mit `BEGIN IMMEDIATE`. Der Test hält einen konkurrierenden SQLite-Schreibzugriff gezielt offen und prüft Steuerbefehle sowie Einstellungsänderungen. Der zusätzliche Prozesstest deckte einen zweiten Fehler auf: Das Öffnen/Schließen der Datenbank außerhalb von SQLite hob POSIX-Sperren auf; nach einem separaten Start sah der Worker Stoppbefehle nicht zuverlässig. Der Test prüft deshalb auch den tatsächlichen Start, fortlaufende Heartbeats, konkurrierende Schreibzugriffe, doppelte Worker, Stoppen und Neustart.
+**13 static/format checks passed:** both TOML files and both workflow YAML files
+parsed successfully, four shell scripts passed `bash -n`, the macOS plist
+parsed successfully, JavaScript passed `node --check`, the SQLite schema from
+`storage.rs` was created in Python SQLite, no `todo!`/`unimplemented!` macros
+were present in Rust application code, and no additional font files were
+bundled. Full list: [static-test-results.json](static-test-results.json).
 
-- `cargo test --locked --offline --no-default-features`: 38 Tests erfolgreich (7 Unit-, 27 Ereignis-/Speicher- und 4 neue Diensttests).
-- `cargo test --locked --offline --all-targets`: 42 Tests erfolgreich, einschließlich vier zusätzlicher Linux-Fenster-/Tray-Regressionstests.
-- `cargo check --locked --offline --all-targets`: erfolgreich mit Tray-Abhängigkeiten.
-- `cargo clippy --locked --offline --all-targets`: erfolgreich; bestehende Hinweise zu älterem UI-/Filter-/Testcode bleiben.
-- `cargo build --locked --offline --release`: erfolgreich, native Linux-Binärdatei `target/release/hush`.
-- Abschließender Test der tatsächlichen Release-Datei mit frischem Datenverzeichnis: Startbestätigung, Status, zweiter Worker, Stoppen, Neustart und Erkennung eines veralteten Heartbeats erfolgreich; keine Zugangsdaten oder GitHub-Zugriffe.
-- Shellsyntax der Linux-/macOS-Paketskripte: erfolgreich geprüft.
+The four screenshots in `preview/screenshots/` were generated from the HTML
+file. The dark inbox and settings were visually checked for readability,
+positioning, and obstructive overlaps. These images do **not** validate native
+egui window rendering.
 
-## Niri-/Wayland-Korrektur
+## Rust validation after the tray and service fixes
 
-Der vorherige Schließpfad sendete `CancelClose` und `Visible(false)`. Die eingesetzte winit-Version 0.30.13 ignoriert `set_visible` unter Wayland, sodass Niri das Fenster nicht schließen konnte. Unter Linux besitzt jetzt ein unabhängiger Desktop-Prozess das Tray. Der Fensterprozess lässt den nativen Schließbefehl zu; Tray und Worker bleiben bestehen. Der Tray-Prozess kann anschließend ein neues Fenster öffnen. `--tray` benötigt kein verstecktes Wayland-Fenster mehr.
+Checked on October 8, 2026, on Linux x86_64 with Rust 1.99.0. Tray dependencies
+were added to the existing `Cargo.lock`; Cargo accepted it with `--locked`.
 
-Vier neue Tests prüfen die echten egui-Viewport-Kommandos bei einem Schließereignis (weder `CancelClose` noch `Visible(false)`), gespeicherte Einstellungen beim erneuten Erzeugen der Oberfläche, Pause/Einstellungen/Beenden aus dem Controller sowie das Wiederverwenden vorhandener Tray- und Fensterinstanzen. Sie laufen ohne Desktop-Sitzung und ersetzen keinen interaktiven Niri-Test. Die neu gebaute Release-Datei wurde zusätzlich ohne Display getestet: Fenster-Fallback wird versucht, dessen Fehler landet in `window.log`, der Desktop-Prozess beendet sich mit Fehlerstatus, der Dienst bleibt unabhängig gesund und lässt sich anschließend stoppen.
+The previous service startup failure was reproduced with a fresh isolated data
+directory: the process exited with `Hush: database is locked`, without a token
+or GitHub access. The new concurrency test failed at the same point before the
+fix and passed with `BEGIN IMMEDIATE`. It deliberately holds a competing SQLite
+write open and checks control commands and settings changes. The additional
+process test exposed a second issue: opening/closing the database outside
+SQLite released POSIX locks; after a separate startup, the worker did not
+reliably observe stop commands. The test therefore also checks actual startup,
+continuous heartbeats, competing writes, duplicate workers, stopping, and
+restarting.
 
-## Weiterhin nicht durchgeführt
+- `cargo test --locked --offline --no-default-features`: 38 tests passed
+  (7 unit, 27 event/storage, and 4 new service tests).
+- `cargo test --locked --offline --all-targets`: 42 tests passed, including
+  four additional Linux window/tray regression tests.
+- `cargo check --locked --offline --all-targets`: passed with tray dependencies.
+- `cargo clippy --locked --offline --all-targets`: passed; existing warnings
+  about older UI/filter/test code remained.
+- `cargo build --locked --offline --release`: passed; native Linux executable
+  at `target/release/hush`.
+- Final test of the actual release executable with a fresh data directory:
+  startup confirmation, status, a second worker, stopping, restarting, and stale
+  heartbeat detection passed; no credentials or GitHub access were used.
+- Shell syntax of Linux/macOS packaging scripts: passed.
 
-| Bereich | Status |
+## Niri/Wayland fix
+
+The previous close path sent `CancelClose` and `Visible(false)`. The winit
+version in use, 0.30.13, ignores `set_visible` on Wayland, so Niri could not close
+the window. On Linux, an independent desktop process now owns the tray. The
+window process allows the native close command; tray and worker remain alive.
+The tray process can subsequently open a new window. `--tray` no longer needs a
+hidden Wayland window.
+
+Four new tests check the actual egui viewport commands during a close event
+(neither `CancelClose` nor `Visible(false)`), persisted settings when recreating
+the UI, pause/settings/quit from the controller, and reuse of existing tray and
+window instances. They run without a desktop session and do not replace an
+interactive Niri test. The rebuilt release executable was also tested without
+a display: it attempted the window fallback, wrote its error to `window.log`,
+the desktop process exited with an error status, and the service remained
+independently healthy and could subsequently be stopped.
+
+## Checks not performed in these local validation sessions
+
+| Area | Status |
 |---|---|
-| Native Tray-Menüs, Schließen/Öffnen, Niri/DMS-Hostwechsel | Desktop-Sitzung und private D-Bus-Sockets durch Sandbox gesperrt; lokal manuell prüfen |
-| Windows-/macOS-Build und native Interaktion | Auf diesem Linux-System nicht ausgeführt |
-| Echte GitHub-Ereignisse / SSO / Team-Mitgliedschaften | Keine Zugangsdaten verwendet |
-| Schlüsselbund und echte OS-Banner | Nicht getestet |
-| Installationsskripte / Autostart / macOS-Signierung | Nicht nativ ausgeführt |
-| GitHub Actions und `cargo audit` | Nicht ausgeführt |
+| Native tray menus, closing/opening, Niri/DMS host changes | Desktop session and private D-Bus sockets blocked by the sandbox; requires local manual testing |
+| Windows/macOS builds and native interaction | Not run on this Linux system |
+| Real GitHub events / SSO / team memberships | No credentials used in automated validation |
+| Keychain and actual OS banners | Not tested |
+| Installation scripts / autostart / macOS signing | Not run natively |
+| GitHub Actions and `cargo audit` | Not run as part of these local sessions |
 
-Der Linux-Build und die lokalen Tests belegen keinen plattformübergreifenden Live-Betrieb. Die separate HTML-Vorschau prüft das native Tray nicht.
+The Linux build and local tests do not establish live operation across all
+platforms. The separate HTML preview does not test the native tray.
 
-Manuelle Tray-Prüfung: Hush normal starten, schließen und über das Tray wieder öffnen; erneut über den Launcher öffnen und genau ein Fenster/Icon prüfen. Pause/Fortsetzen, Aktualisieren, Dienst stoppen/starten und vollständiges Beenden prüfen. `--tray` soll mit verfügbarem Tray ohne Fenster starten; ohne StatusNotifier-Host soll das Fenster mit Hinweis erscheinen. Während Hush im Tray liegt, die Leiste neu starten und Erreichbarkeit prüfen. `--demo` darf weder Tray noch Worker anlegen.
+Manual tray check: start Hush normally, close it, and reopen it through the tray;
+open it again from the launcher and check that exactly one window/icon exists.
+Check pause/resume, refresh, service stop/start, and complete shutdown. With a
+tray available, `--tray` should start without a window; without a StatusNotifier
+host, the window should appear with a notice. Restart the desktop panel while
+Hush is in the tray and check that it remains accessible. `--demo` must create
+neither a tray nor a worker.
 
-## Reproduzierbare Prüfkommandos
+## Reproducible validation commands
 
-Native Rust-Prüfungen nach Installation der Build-Abhängigkeiten:
+Native Rust checks after installing build dependencies:
 
 ```sh
 cargo test --locked --no-default-features
@@ -157,21 +241,40 @@ cargo build --locked --release
 cargo run --locked --release -- --demo
 ```
 
-Die enthaltene `Cargo.lock` beibehalten und mit `--locked` prüfen. Eine feste Rust-Toolchainversion für einen echten Release ebenfalls dokumentieren; der mitgelieferte `stable`-Kanal ist beweglich.
+Keep the included `Cargo.lock` and validate with `--locked`. Also document a
+fixed Rust toolchain version for an actual release; the supplied `stable`
+channel changes over time.
 
-Browserprüfung, unabhängig von Rust:
+Browser check, independent of Rust:
 
 ```sh
-# Nach separater Installation von Python Playwright und Chromium:
+# After separately installing Python Playwright and Chromium:
 CHROMIUM=/usr/bin/chromium python tests/preview_smoke.py
 ```
 
-Der Test verwendet `--no-sandbox` ausschließlich für den headless Browser in der isolierten Testumgebung, nicht für die native Hush-Anwendung. Er installiert keinen Browser und kontaktiert keine Website.
+The test uses `--no-sandbox` only for the headless browser in the isolated test
+environment, not for the native Hush application. It does not install a browser
+or contact any website.
 
-## Native Abnahme vor echten privaten Repositories
+## Native acceptance testing before using real private repositories
 
-Mit einem Testkonto und einem nicht vertraulichen Testrepository beginnen. Einrichten, Erstimport und anschließend jedes Ereignis **nach** dem Erstimport auslösen. Frische persönliche Zuweisung, direkte Review-Anfrage, Anfrage an ein tatsächlich eigenes Team sowie an ein fremdes Team; neues Issue vs. Kommentar auf altem Issue; Review auf eigenem vs. fremdem PR; direkte Mention, ähnlicher Login, Codeblock, Folgekommentar ohne Mention und editierter Kommentar. Während einer Pause sollten Einträge, aber keine Banner entstehen.
+Start with a test account and a non-confidential test repository. Set up the
+account, complete the initial import, then trigger each event **after** that
+import: a new personal assignment, a direct review request, a request to a team
+the account actually belongs to and to another team; a new issue versus a
+comment on an old issue; a review on the account's own PR versus another user's
+PR; a direct mention, a similar login, a code block, a follow-up comment without
+a mention, and an edited comment. While paused, entries should appear but
+banners should not.
 
-Zusätzlich Netzwerk trennen/wiederherstellen, GitHub-Rate-Limit/429 simulieren, App-/Worker-Neustart, doppelte Hintergrundstarts, widerrufene Tokens, gesperrten Schlüsselbund, fehlende Repository-Rechte, Kontotrennung während Sync und lokalen Datenzugriff kontrollieren. Netzwerk-Tests sollten auch Redirect-/Fremdhost-Blockade und fehlende Proxyunterstützung bestätigen.
+Also check network disconnect/reconnect, simulated GitHub rate limits/429
+responses, app/worker restart, duplicate background starts, revoked tokens, a
+locked keychain, missing repository permissions, account disconnection during
+sync, and local data access. Network tests should also confirm redirect/foreign
+host blocking and the absence of proxy support.
 
-Unter Niri/DMS die Benutzer-D-Bus-Sitzung und entsperrten Secret Service testen. Unter Windows aus dem registrierten Startmenüeintrag starten. Unter macOS aus dem erzeugten `.app`-Bundle starten und Berechtigungen/Fokusmodus prüfen. Alle Zielsysteme separat testen; ein Linux-Test beweist keine funktionierende Windows- oder macOS-Zustellung.
+On Niri/DMS, test the user D-Bus session and an unlocked Secret Service. On
+Windows, launch from the registered Start menu entry. On macOS, launch from the
+generated `.app` bundle and check permissions/Focus mode. Test every target
+system separately; a Linux test does not demonstrate working Windows or macOS
+delivery.

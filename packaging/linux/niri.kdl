@@ -1,12 +1,12 @@
-// Optional: in ~/.config/niri/config.kdl übernehmen.
-// Absoluten Pfad anpassen. ~ und $HOME werden von niri hier nicht durch Bash expandiert.
-spawn-at-startup "/home/DEIN-NAME/.local/bin/hush" "--tray"
+// Optional: add to ~/.config/niri/config.kdl.
+// Adjust the absolute path. Niri does not expand ~ or $HOME through Bash here.
+spawn-at-startup "/home/YOUR-USERNAME/.local/bin/hush" "--tray"
 
-// Optional innerhalb deines bestehenden binds-Blocks:
-// Mod+G { spawn "/home/DEIN-NAME/.local/bin/hush"; }
+// Optional, inside your existing binds block:
+// Mod+G { spawn "/home/YOUR-USERNAME/.local/bin/hush"; }
 
-// Hush verwendet die Wayland app_id io.hush.github.
-// Optional (nicht nötig für Benachrichtigungen):
+// Hush uses the Wayland app_id io.hush.github.
+// Optional (not required for notifications):
 // window-rule {
 //     match app-id="^io\\.hush\\.github$"
 //     default-column-width { proportion 0.66; }

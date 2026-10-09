@@ -1,4 +1,5 @@
 {
+  "record_status": "Historical results from initial project creation; not validation of the current revision.",
   "scope": "HTML design prototype only; not native Rust/egui",
   "passed": 25,
   "checks": [

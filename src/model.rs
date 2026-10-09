@@ -62,6 +62,7 @@ pub struct Config {
     pub show_preview: bool,
     pub paused_until: i64,
     pub has_detail_token: bool,
+    pub oauth: bool,
     pub read_org: bool,
     pub revision: u64,
 }
@@ -69,7 +70,7 @@ impl Default for Config {
     fn default() -> Self {
         Self { login: String::new(), rules: Rules::default(), repositories: vec![], manual_teams: vec![],
             interval_secs: 120, desktop_notifications: true, show_preview: false,
-            paused_until: 0, has_detail_token: false, read_org: false, revision: 0 }
+            paused_until: 0, has_detail_token: false, oauth: false, read_org: false, revision: 0 }
     }
 }
 impl Config {

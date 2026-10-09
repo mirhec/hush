@@ -1,82 +1,225 @@
 # Hush
-GitHub-Benachrichtigungen für den Desktop.
 
-Eine Desktop-Anwendung in **Rust + egui/eframe** mit einem schmalen GitHub-Posteingang, vier Ereignisarten und hellem oder dunklem Farbschema.
+GitHub notifications for the desktop.
 
-**Release-Version aus dem Git-Tag · MIT**
+A desktop application built with **Rust + egui/eframe**, with a narrow GitHub
+inbox, four event types, and light or dark themes.
 
-Der lokale Linux-Build und die Rust-Tests sind geprüft. Auf GitHub Actions wurden außerdem Windows- und macOS-Apple-Silicon-Installer gebaut; Installation, Schlüsselbund, Tray und Desktop-Benachrichtigungen benötigen weiterhin Tests auf den Zielsystemen. Den aktuellen Prüfstand und offene Punkte dokumentiert [VALIDATION.md](docs/VALIDATION.md).
+**Release versions from Git tags · MIT**
 
-## Anwendung und Vorschau
+Local Linux builds and Rust tests have been validated. GitHub Actions has also
+built Windows and macOS Apple Silicon installers; installation, keychain, tray,
+and desktop notifications still need testing on the target systems. See
+[VALIDATION.md](docs/VALIDATION.md) for recorded checks and remaining gaps.
 
-**Die Anwendung:** `src/` enthält die Rust-Implementierung: Oberfläche, GitHub-Client, Ereignisfilter, Hintergrundprozess, SQLite-Speicher und Schlüsselbund-/Benachrichtigungsanbindung. Aktuelle Abbildungen der nativen egui-Oberfläche liegen in `docs/screenshots/`; der Export und dessen Darstellung sind in [DESIGN.md](docs/DESIGN.md) beschrieben.
+## Application and preview
 
-**Der historische Prototyp:** `preview/hush-preview.html` und die Bilder in `preview/screenshots/` zeigen einen früheren Entwurf mit erfundenen Daten. Seine Detailansicht, Seitenleiste und Archivfunktion gehören nicht mehr zur Anwendung. Der Prototyp verbindet sich nicht mit GitHub und lädt keine externen Fonts oder Bilder.
+**The application:** `src/` contains the Rust implementation: UI, GitHub client,
+event filters, background process, SQLite storage, and keychain/notification
+integration. Current images of the native egui interface are in
+`docs/screenshots/`; [DESIGN.md](docs/DESIGN.md) explains their export and rendering.
 
-## Die vier Regeln
+**The historical prototype:** `preview/hush-preview.html` and images in
+`preview/screenshots/` show an earlier design with fictional data. Its detail
+view, sidebar, and archive are no longer part of the application. The prototype
+does not connect to GitHub or load external fonts or images.
 
-| Regel | Implementierung | Grenze |
+## The four rules
+
+| Rule | Implementation | Limit |
 |---|---|---|
-| PR dir zugewiesen / Review für dich oder dein Team | Zuweisungs- und Review-Request-Einträge aus der PR-Timeline; Abgleich mit deinem Login und konfigurierten/ermittelten Teams | GitHub muss den Thread auffindbar machen; Team-Mitgliedschaften brauchen `read:org` oder eine manuelle Liste. |
-| Neues Issue in ausgewählten Repositories | Repository-Issue-Abfrage mit Prüfung von `created_at`; PRs und bloße spätere Updates werden ausgeschlossen | Bis zu 20 Repositories; keine GitHub-Projects-Boards. |
-| Review auf einem deiner PRs | Abfrage eingereichter Reviews und Prüfung des PR-Autors; `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED` | Lesezugriff auf den PR erforderlich; Suchindex und API können verzögert sein. |
-| Direkte Erwähnung in Kommentaren | Prüft tatsächliche Kommentartexte in Issues, PR-Kommentaren, Review-Kommentaren/-Texten, Commit-Kommentaren und Repository-Discussions | Nur auffindbare und zugängliche Threads. Kein vollständiges „überall auf GitHub“; Gists und Organisations-Discussions sind nicht abgedeckt. |
+| A PR assigned to you / a review requested from you or your team | Assignment and review-request entries from the PR timeline, matched against your login and configured/discovered teams | GitHub must make the thread discoverable; team membership requires `read:org` or a manual list. |
+| A new issue in selected repositories | Repository issue queries checked against `created_at`; PRs and subsequent updates alone are excluded | Up to 20 repositories; GitHub Projects boards are not supported. |
+| A review on one of your PRs | Submitted reviews checked against the PR author; `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED` | Read access to the PR is required; the search index and API may lag. |
+| A direct mention in a comment | Checks actual comment text in issues, PR comments, review comments/bodies, commit comments, and repository discussions | Only discoverable, accessible threads. This does not cover all of GitHub; Gists and organization discussions are excluded. |
 
-GitHubs Benachrichtigungsgrund `mention` ist ausdrücklich **kein** Beweis für eine neue Erwähnung. Hush liest die zugrunde liegenden Ereignisse. Markdown-Code und Zitate werden bei Erwähnungen ignoriert; diese lokale Auswertung ist eine Annäherung und kein identischer Nachbau von GitHubs Mention-Parser. Ein später erneut bearbeiteter, bereits gemeldeter Kommentar erhält nicht nochmals ein Banner.
+GitHub's `mention` notification reason is explicitly **not** evidence of a new
+mention. Hush reads the underlying events. Markdown code and quotations are
+ignored when detecting mentions; this local analysis approximates GitHub's
+mention parser rather than reproducing it exactly. Editing a previously reported
+comment again does not produce another banner.
 
-## Bedienung
+## Using Hush
 
-Das Fenster startet mit **440 × 640 Pixeln** und lässt sich bis **360 × 480** verkleinern. Der Posteingang zeigt standardmäßig nur ungelesene Benachrichtigungen. Neben der Suche öffnet **Filter** das Menü für „Ungelesen“, alle oder einzelne Ereignisarten sowie „Alle als gelesen markieren“. Ohne den Ungelesen-Filter erscheint auch der gelesene Verlauf.
+The window starts at **440 × 640 pixels** and can shrink to **360 × 480**. The
+inbox shows only unread notifications by default. Beside search, **Filter** opens
+the menu for unread-only filtering (`"Ungelesen"`), all or individual event types,
+and marking everything as read (`"Alle als gelesen markieren"`). Turn off the
+unread-only filter to show read history as well.
 
-Ein Klick auf einen Eintrag öffnet ihn direkt auf GitHub im Systembrowser. Erst wenn der Browser-Aufruf erfolgreich war, markiert Hush ihn lokal als gelesen. Schlägt das Öffnen fehl, bleibt er ungelesen und ein Hinweis erscheint. Zulässig sind ausschließlich Links zu `https://github.com`.
+Clicking an entry opens it directly on GitHub in the system browser. Hush marks
+it as read locally only after the browser call succeeds. If opening fails, the
+entry remains unread and a notice appears. Only `https://github.com` links are
+accepted.
 
-Das Zahnrad oben rechts öffnet die Einstellungen mit den Tabs Benachrichtigungen, Konto und Diagnose. `Strg+K` / `Cmd+K` wechselt zur Suche; `Esc` schließt das Filtermenü oder führt aus den Einstellungen zum Posteingang zurück.
+The gear at the top right opens settings with notifications, account, and
+diagnostics tabs. `Ctrl+K` / `Cmd+K` switches to search; `Esc` closes the filter
+menu or returns from settings to the inbox. The application interface is German.
 
-Die normalen Einstellungen beschränken sich auf die vier Regeln, Issue-Repositories, Systembenachrichtigungen, vertrauliche Inhaltsvorschau und ein Abfrageintervall von 1/2/5 Minuten. Eine Pause hält Desktop-Benachrichtigungen für 30 Minuten zurück; die Ereignisse erscheinen weiter im Posteingang. Es gibt nach Ende der Pause keine nachträgliche Bannerflut. Die Hell-/Dunkel-Auswahl gilt in 0.1 für die laufende Fenstersitzung.
+The main settings cover the four rules, issue repositories, system notifications,
+private content previews, and a polling interval of 1/2/5 minutes. Pausing holds
+back desktop notifications for 30 minutes while events continue to appear in the
+inbox. There is no burst of delayed banners when the pause ends. The light/dark
+selection applies to the current window session.
 
-Beim ersten Synchronisieren werden maximal die letzten 24 Stunden importiert, **ohne Banner**. Der sichtbare Verlauf ist auf 500 Einträge bzw. 30 Tage begrenzt. Ältere Dubletten-IDs werden noch bis zu 90 Tage aufbewahrt.
+The initial sync imports at most the last 24 hours **without banners**. Visible
+history is limited to 500 entries or 30 days. Older deduplication IDs are retained
+for up to 90 days.
 
-**Der Lesestatus ist lokal:** Hush verändert keine Issues, PRs oder GitHub-Lesestände. Auf mehreren Rechnern entstehen unabhängige Posteingänge und gegebenenfalls mehrere Banner für dasselbe Ereignis. In früheren Versionen archivierte Einträge bleiben als gelesen im Verlauf erhalten.
+**Read state is local:** Hush does not modify issues, PRs, or GitHub read state.
+Multiple computers have independent inboxes and may show separate banners for
+the same event. Entries archived in older versions remain in history as read.
 
-## Starten / bauen
+## Connecting GitHub
 
-Voraussetzung: Rust über Rustup, ein aktueller C/C++-Linker für dein Betriebssystem und bei Linux die unten genannten Bibliotheken. `rust-toolchain.toml` verwendet den stabilen Toolchain-Kanal; die im Projekt festgelegte Mindestversion ist Rust 1.95. Abhängigkeiten werden beim ersten Cargo-Aufruf aus dem Internet bezogen.
+Hush supports **github.com** and one GitHub account per operating-system user
+profile. The default connection method is browser sign-in using GitHub's OAuth
+device flow:
+
+1. Open account settings and start GitHub sign-in.
+2. Hush displays a short one-time code and opens GitHub in the browser.
+3. Enter the code on GitHub and approve access. Hush completes the connection
+   after GitHub confirms authorization.
+
+A single OAuth login covers notifications and repository details, including
+private repositories. No separate personal access tokens are needed. Credentials
+are stored in the operating system's keychain, including a refresh token when
+GitHub provides one. Expiring access tokens are renewed through that refresh
+token, and rotated credentials are saved back to the keychain. There is no
+embedded OAuth client secret, local callback server, or Hush authentication
+server.
+
+The requested scopes are `notifications`, `repo`, `read:org`, and `offline_access`.
+GitHub's `repo` scope includes write access; GitHub does not offer an equivalent
+OAuth scope restricted to reading private repositories. **Hush only reads
+repository data** and keeps notification read state local. `read:org` supports
+team discovery, and `offline_access` supports access-token renewal. Organization
+policies, OAuth application restrictions, or SSO may require additional approval.
+Revoked access or an expired refresh token requires signing in again.
+
+### OAuth application setup for maintainers
+
+Official Hush builds include the public client ID of the registered Hush OAuth
+application. Users do not need to register an application or create tokens.
+Device Flow is enabled for that registration.
+
+For a fork or a separately registered application, override the public client ID
+at build time using `HUSH_GITHUB_CLIENT_ID`. The release workflow accepts an
+optional GitHub Actions repository variable with the same name; Flatpak staging
+passes this public value into its build sandbox. For a local build:
 
 ```sh
-# Zuerst ohne Token, ohne Netzwerk und ohne lokale Kontodaten ansehen:
-cargo run --release -- --demo
-
-# Native Anwendung mit echtem Posteingang:
-cargo run --release
-
-# Vor dem echten Einsatz:
-cargo test --no-default-features
-cargo check --all-targets
-cargo clippy --all-targets
-cargo build --release
+HUSH_GITHUB_CLIENT_ID=YOUR_PUBLIC_CLIENT_ID cargo build --locked --release
 ```
 
-`Cargo.lock` ist enthalten. Mit `--locked` bauen, damit die geprüften Abhängigkeitsversionen verwendet werden. `eframe`, `keyring`, `notify-rust` und `tray-icon` sind zusätzlich direkt auf Versionen festgelegt.
+An empty override uses the built-in Hush client ID. Never include a client secret.
+See [RELEASING.md](docs/RELEASING.md) for release configuration.
 
-### Linux, Niri und Dank Material Shell
 
-Wayland und X11 sind als eframe-Backends aktiviert. Hush sendet native Benachrichtigungen über den vorhandenen Freedesktop-/D-Bus-Dienst. Wenn DMS diesen Dienst bereitstellt, ist kein zusätzlicher Dunst-/Mako-Dienst vorgesehen. Für Zugangsdaten muss ein entsperrter **Secret Service** laufen, etwa ein entsprechend eingerichteter GNOME Keyring oder KWallet mit Secret-Service-Unterstützung. Fehlt er, wird nicht auf Klartextspeicherung ausgewichen.
+### Advanced: personal access tokens
 
-Beispiel für Debian/Ubuntu-Build-Abhängigkeiten; andere Distributionen verwenden ihre entsprechenden Pakete:
+The previous token-based setup remains available as an advanced alternative for
+users who want narrower repository permissions or already have configured tokens.
+
+**Notifications token:** Create a separate, expiring **classic personal access
+token** with only `notifications`. Optionally add `read:org` for automatic team
+discovery. In this manual mode, other classic scopes, including `repo`,
+`public_repo`, `gist`, and `user`, are rejected when connecting.
+
+**Optional details token:** To read private repositories, add a **fine-grained
+personal access token** for selected repositories with `Issues: Read-only`,
+`Pull requests: Read-only`, and, if needed, `Discussions: Read-only`. Metadata
+read access is part of GitHub's permission model. Commit comments may also need
+`Contents: Read-only`. Do not add write or administration permissions.
+Organizations may require approval.
+
+The details token must belong to the same user. Hush checks identity and the
+absence of reported classic scopes; **it cannot fully verify the fine-grained
+permission matrix**. Check the read-only selections on GitHub. The application
+itself performs only repository read operations even if an excessively privileged
+details token is supplied.
+
+Only one details token can be configured. A fine-grained token is limited to its
+selected resource owner, so this manual mode may not cover several private
+organizations at once. A details token can be added without re-entering the
+stored notifications token. Enter tokens only in the account settings password
+fields, never in command-line arguments, configuration files, or screenshots.
+If avoiding `read:org`, enter team slugs manually in advanced settings, for example
+`my-org/frontend`. The manual list is not verified against membership and must
+be kept up to date.
+
+### Repository access and delivery
+
+Missing access appears in the repository-access section of settings and as a
+notice in the main window. GitHub may report missing permissions for private
+repositories as HTTP 404. Existing issues are imported without system banners;
+new issues created afterward generate notifications. The test-notification button
+checks the operating-system delivery channel independently of GitHub.
+
+Keep GitHub's `Participating and @mentions` / `On GitHub` notifications enabled.
+Hush uses the notification stream to discover threads. Selected issue
+repositories are queried independently; this does not require enabling
+`Watch → All Activity` for every repository.
+
+## Running and building
+
+Requirements: Rust through Rustup, a current C/C++ linker for your operating
+system, and the Linux libraries listed below when applicable.
+`rust-toolchain.toml` uses the stable toolchain channel; the project's declared
+minimum is Rust 1.95. Dependencies are downloaded on the first Cargo invocation.
+
+```sh
+# Preview without tokens, network access, or local account data:
+cargo run --locked --release -- --demo
+
+# Native application with a real inbox:
+cargo run --locked --release
+
+# Validate before real use:
+cargo test --locked --no-default-features
+cargo check --locked --all-targets
+cargo clippy --locked --all-targets
+cargo build --locked --release
+```
+
+`Cargo.lock` is included. Build with `--locked` to use the validated dependency
+versions. `eframe`, `keyring`, `notify-rust`, and `tray-icon` are also directly
+pinned to specific versions.
+
+### Linux, Niri, and Dank Material Shell
+
+Wayland and X11 are enabled as eframe backends. Hush sends native notifications
+through the existing Freedesktop/D-Bus service. If DMS provides that service,
+no additional Dunst/Mako service is needed. Credentials require an unlocked
+**Secret Service**, such as an appropriately configured GNOME Keyring or KWallet
+with Secret Service support. Hush does not fall back to plaintext storage when
+it is unavailable.
+
+Example Debian/Ubuntu build dependencies; use equivalent packages on other
+distributions:
 
 ```sh
 sudo apt install build-essential pkg-config libdbus-1-dev libx11-dev libxi-dev \
   libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev \
   libglib2.0-dev
-cargo build --release
+cargo build --locked --release
 bash packaging/linux/install.sh
 ```
 
-Das Linux-Tray verwendet StatusNotifier und D-Bus über GLib/GIO. Unter Arch/CachyOS wird `glib2` benötigt; AppIndicator ist nicht mehr erforderlich. In Niri/DMS muss das System-Tray in der Leiste aktiv sein. Ohne erreichbare Tray-Leiste bleibt das Fenster zugänglich und zeigt einen Hinweis.
+The Linux tray uses StatusNotifier and D-Bus through GLib/GIO. Arch/CachyOS needs
+`glib2`; AppIndicator is no longer required. Enable the system tray in the
+Niri/DMS panel. If no tray host is reachable, the window remains accessible and
+shows a notice.
 
-Die Installation erfolgt pro Benutzer nach `~/.local/bin` und `~/.local/share`, ohne Root-Rechte. Hush danach über den App-Launcher oder `~/.local/bin/hush` starten. Es wird kein Autostart eingerichtet.
+Installation is per user in `~/.local/bin` and `~/.local/share`, without root
+permissions. Start Hush from the app launcher or `~/.local/bin/hush`. The script
+does not configure autostart.
 
-Für einen **bewusst gewählten** Niri-Autostart die Vorlage `packaging/linux/niri.kdl` an den eigenen Benutzernamen anpassen. Nicht blind eine bestehende Niri-Konfiguration überschreiben. `packaging/linux/dms-status.sh` ist ein optionaler JSON-Helfer für ein zusätzliches eigenes Leisten-Widget, **kein fertig installierbares DMS-Plugin**; es benötigt `jq` und veröffentlicht keine Titel, Repository-Namen oder Tokens.
+For an **explicitly chosen** Niri autostart, adapt `packaging/linux/niri.kdl` to
+your username. Do not blindly overwrite an existing Niri configuration.
+`packaging/linux/dms-status.sh` is an optional JSON helper for a custom panel
+widget, **not a ready-to-install DMS plugin**; it requires `jq` and publishes no
+titles, repository names, or tokens.
 
 ```sh
 ~/.local/bin/hush --status
@@ -85,101 +228,160 @@ Für einen **bewusst gewählten** Niri-Autostart die Vorlage `packaging/linux/ni
 
 ### macOS
 
-Xcode Command Line Tools und Rustup installieren. Anschließend:
+Install Xcode Command Line Tools and Rustup, then run:
 
 ```sh
-cargo build --release
+cargo build --locked --release
 bash packaging/macos/bundle.sh
 open dist/Hush.app
 ```
 
-Das Skript erzeugt ein lokal/ad-hoc signiertes `.app`-Bundle mit eigener Kennung, aber **keine Developer-ID-Signatur oder Notarisierung**. Für native Benachrichtigungen aus diesem Bundle starten und Betriebssystem-Berechtigungen prüfen. Die macOS-Benachrichtigungsintegration muss auf dem eingesetzten macOS separat getestet werden. Nicht Gatekeeper oder andere Schutzmechanismen systemweit abschalten.
+The script creates a locally/ad-hoc signed `.app` bundle with its own identifier,
+but **no Developer ID signature or notarization**. Launch from this bundle for
+native notifications and check operating-system permissions. Test notification
+integration separately on the target macOS version. Do not disable Gatekeeper
+or other system-wide protections.
 
-Apple Silicon und Intel werden im Build-Workflow getrennt gebaut, nicht als Universal-Binary. Optionaler, ausdrücklicher Autostart nach Kopieren nach `/Applications`: `bash packaging/macos/enable-autostart.sh`. Er installiert einen Benutzer-LaunchAgent, keinen Systemdienst.
+Apple Silicon and Intel are built separately in the workflow, not as a universal
+binary. After copying to `/Applications`, optional explicit autostart can be
+configured with `bash packaging/macos/enable-autostart.sh`. It installs a user
+LaunchAgent, not a system service.
 
 ### Windows
 
-Rustup und die Visual-Studio-C++-Build-Tools verwenden. In einer PowerShell im Projektordner:
+Use Rustup and Visual Studio C++ Build Tools. In PowerShell in the project folder:
 
 ```powershell
-cargo build --release
+cargo build --locked --release
 powershell -NoProfile -File packaging/windows/install.ps1
 ```
 
-Das Skript installiert unter `%LOCALAPPDATA%\Programs\Hush`, erstellt einen Startmenüeintrag und registriert Hushs eigene AppUserModelID für Windows-Benachrichtigungen. Es braucht keine Administratorrechte und verwendet keine fremde App-Identität. Falls eine PowerShell-Richtlinie das lokale Skript sperrt, zuerst Skript/Herkunft prüfen; keine organisationsweite Sicherheitsrichtlinie umgehen.
+The script installs to `%LOCALAPPDATA%\Programs\Hush`, creates a Start menu entry,
+and registers Hush's own AppUserModelID for Windows notifications. It does not
+need administrator permissions or impersonate another application's identity.
+If a PowerShell policy blocks the local script, inspect the script and its
+source first; do not bypass organization-wide security policy.
 
-Autostart ist standardmäßig aus. Er wird nur mit dem ausdrücklichen Parameter `-AutoStart` gesetzt. Die Release-EXE hat kein separates Konsolenfenster. CLI-Ausgabeumleitung/`--status` unter Windows ist nicht getestet; der Statushelfer ist primär für Linux gedacht.
+Autostart is off by default and enabled only with the explicit `-AutoStart`
+parameter. The release executable does not open a separate console window. CLI
+output redirection/`--status` on Windows has not been tested; the status helper
+is primarily intended for Linux.
 
-### Builds und Releases
+### Builds and releases
 
-Der einzige Workflow `release.yml` startet automatisch nur beim Veröffentlichen eines GitHub-Releases. Er übernimmt die Version aus dem Tag (z. B. `1.0.2` oder `v1.0.2`) für Anwendung und Installer. `Cargo.toml` und `Cargo.lock` werden dafür ausschließlich im Build-Verzeichnis angepasst; manuelle Versionsänderungen oder zusätzliche Versions-Commits sind nicht nötig. Danach prüft er Paketskripte und Abhängigkeiten, testet und baut Linux x86-64, Windows x86-64, macOS Apple Silicon und Intel und lädt alle Installer und SHA-256-Prüfsummen hoch. Pushes auf `main`, Tag-Pushes und Pull Requests starten keine Actions. Ein vorhandenes Release kann manuell erneut gebaut werden. Signierung und Apple-Notarisierung sind über GitHub-Secrets vorbereitet. Ohne Zertifikate bleiben die Installer unsigniert.
+The only workflow, `release.yml`, starts automatically only when a GitHub release
+is published. It uses the tag's version, such as `1.0.2` or `v1.0.2`, for the
+application and installers. `Cargo.toml` and `Cargo.lock` are changed only inside
+the build directory; manual version edits or additional version commits are
+unnecessary. The workflow validates packaging scripts and dependencies, tests
+and builds Linux x86-64, Windows x86-64, macOS Apple Silicon and Intel, and uploads
+all installers and SHA-256 checksums. Pushes to `main`, tag pushes, and pull
+requests do not start Actions. An existing release can be rebuilt manually.
+Signing and Apple notarization can be configured through GitHub secrets.
+Without certificates, installers remain unsigned.
 
-Für Linux x86-64 erstellt derselbe Workflow ein Flatpak-Bundle. Installieren: `flatpak install --user Hush-1.0.0-linux-x86_64.flatpak`; starten: `flatpak run io.hush.github`. Die Freedesktop-Runtime wird bei Bedarf von Flathub geladen. Neue Versionen werden durch Installation des jeweiligen neuen Bundles aktualisiert.
+For Linux x86-64, the workflow creates a Flatpak bundle. Install it with
+`flatpak install --user Hush-1.0.0-linux-x86_64.flatpak` and launch with
+`flatpak run io.hush.github`. The Freedesktop runtime is downloaded from Flathub
+if needed. Update by installing the bundle for the new version.
 
-Einrichtung, Dateinamen und Release-Ablauf: [RELEASING.md](docs/RELEASING.md). Der zusammengefasste Release-Workflow wurde lokal geprüft und muss nach Übernahme ins Repository erstmals auf GitHub laufen.
+See [RELEASING.md](docs/RELEASING.md) for setup, filenames, and the release process.
 
-## GitHub verbinden: minimale Rechte statt voller Repository-Zugriff
+## Window and background process
 
-Hush spricht in 0.1 ausschließlich **github.com** an. Unterstützt wird ein GitHub-Konto pro Betriebssystem-Benutzerprofil.
+Normal startup opens the window, creates a tray/menu-bar icon, and starts a
+separate background process if needed. On Linux, closing the window actually
+ends its process; tray and service continue independently. Opening Hush from the
+tray or launcher creates a new window with saved settings and events. On
+Windows/macOS, the existing window is hidden and shown again. Separate file locks
+prevent duplicate background processes and duplicate windows/tray icons. Without
+an available tray, closing the window still leaves the background service running.
 
-**1. Benachrichtigungs-Token:** Einen separaten, ablaufenden **klassischen Personal Access Token** mit ausschließlich `notifications` anlegen. Optional zusätzlich `read:org`, wenn Hush deine Teams automatisch ermitteln soll. Andere klassische Scopes, auch `repo`, `public_repo`, `gist` oder `user`, werden beim Verbinden abgewiesen. Das ist absichtlich strenger als bei vielen anderen Clients.
+Left-clicking the tray icon opens the window or brings it to the front.
+Right-clicking opens its menu. The tray shows service status and unread count,
+without event titles or repository names. Its actions open Hush or settings,
+refresh, pause for 30 minutes/resume, start the service, or quit Hush. Quitting
+ends the window, tray, and service once pending API requests finish. Stopping the
+background service in settings or with `hush --stop` stops polling only; the
+tray remains accessible.
 
-**2. Optionaler Detail-Token:** Für private Repositories zusätzlich einen **Fine-grained Personal Access Token** erstellen: nur ausgewählte Repositories; `Issues: Read-only`, `Pull requests: Read-only`, bei Bedarf `Discussions: Read-only`. Metadaten-Lesezugriff ist Bestandteil des GitHub-Modells. Für Commit-Kommentare kann zusätzlich `Contents: Read-only` nötig sein. Keine Schreib- oder Administrationsrechte hinzufügen. Organisationen können eine Genehmigung verlangen.
+- `hush --tray`: Start directly in the tray; show the window if no tray is
+  available. The supplied autostart templates use this mode.
+- `hush --start`: Start only the service and wait for startup confirmation.
+- `hush --background`: Run the service in the invoking process, without a
+  window/tray. Errors go to stderr.
+- `hush --status`: JSON with `running`, `healthy`, `phase`, and `service_error`,
+  alongside the other status fields.
+- `hush --demo`: Offline demo without a service, tray, or account data.
 
-Der Detail-Token muss zum selben Benutzer gehören. Hush überprüft Identität und dass keine klassischen Scopes gemeldet werden; **die tatsächliche Fine-grained-Berechtigungsmatrix kann diese Version nicht vollständig nachprüfen**. Du musst die Nur-Lesen-Auswahl bei GitHub kontrollieren. Die Anwendung selbst verwendet ausschließlich Leseoperationen, unabhängig davon, ob ein zu mächtiger Detail-Token eingegeben wurde.
+Startup errors appear in the UI and when starting through `--start`. The private
+data directory also contains `service.log` (normally
+`~/.local/share/hush/service.log` on Linux); this error log is replaced on each
+new service startup. On Linux, `window.log` may contain window-opening errors.
+Process creation counts as successful service startup only after a confirmed
+heartbeat. Concurrent SQLite writes from UI, worker, and heartbeat are serialized
+before reading so they do not fail during a lock upgrade. File preparation also
+preserves existing SQLite locks so the service and UI see the same data.
 
-Nur ein Detail-Token ist konfigurierbar. Ein Fine-grained-Token ist auf seinen ausgewählten Ressourcenbesitzer beschränkt; mehrere private Organisationen gleichzeitig können deshalb in 0.1 nicht vollständig abgedeckt sein. Fehlender Zugriff soll im Verbindungsstatus sichtbar werden, nicht als „kein neues Ereignis“ verschwinden.
+Logging out/restarting ends the processes; autostart requires explicit setup.
+System banners still have no click action.
 
-Fehlender Zugriff ist in den Einstellungen unter „Repository-Zugriff“ und als Hinweis im Hauptfenster sichtbar. Bei privaten Repositories kann GitHub fehlende Berechtigungen als HTTP 404 melden. Einen Detail-Token im Feld „Detail-Token für private Repositories“ ergänzen und „Tokens speichern“ wählen; der bereits gespeicherte Benachrichtigungs-Token muss dazu nicht erneut eingegeben werden. Die ersten vorhandenen Issues werden ohne System-Banner importiert; spätere neue Issues erzeugen Benachrichtigungen. Die Schaltfläche „Test-Benachrichtigung“ prüft den Betriebssystem-Kanal unabhängig von GitHub.
+Delivery uses **polling, not server-side push**. The default is every two minutes,
+subject to GitHub's minimum `X-Poll-Interval` and rate-limit backoff. Network
+interruptions, search-index latency, large backlogs, and missing permissions may
+delay or limit event detection.
 
-Die beiden Tokens in den Passwortfeldern der Kontoeinstellungen eingeben, **nie als Kommandozeilenargument, Konfigurationsdatei oder Screenshot**. Falls du `read:org` vermeiden möchtest, kannst du deine Team-Slugs unter „Erweitert“ selbst eintragen, beispielsweise `meine-org/frontend`. Diese manuelle Liste wird nicht auf Mitgliedschaft verifiziert und muss aktuell gehalten werden.
+## Scope and limits
 
-Auf GitHub `Participating and @mentions` / „On GitHub“ aktiviert lassen. Hush verwendet den Benachrichtigungsstrom zur Entdeckung von Threads. Die ausgewählten Issue-Repositories werden unabhängig davon abgefragt; dafür ist kein pauschales `Watch → All Activity` erforderlich.
+GitHub Projects boards, Gists, organization-wide discussions, GitHub Enterprise
+hosts, multiple accounts, and device synchronization are not supported. Hush
+cannot guarantee mentions in threads absent from your GitHub notifications,
+events that have since been deleted, or a complete historical import. A review
+request to a team differs from assigning a PR to a group. Mention detection
+focuses on direct personal mentions, not every team mention.
 
-## Fenster und Hintergrundprozess
+Requests are bounded: 8 MiB per response, at most ten pages per query, 160 API
+calls per cycle, and 24 thread tasks per cycle. For notifications, the page limit
+currently means at most 500 entries per complete query; for many other lists,
+1,000. Very large threads/backlogs remain pending with a warning rather than
+silently claiming a complete successful sync. A thread that exceeds the limit on
+every retry is not automatically split.
 
-Der normale Start öffnet das Fenster, legt ein Tray-/Menüleisten-Symbol an und startet bei Bedarf einen getrennten Hintergrundprozess. Unter Linux wird das Fenster beim Schließen tatsächlich beendet; Tray und Dienst laufen unabhängig weiter. „Hush öffnen“ oder ein erneuter Launcher-Start öffnet ein neues Fenster mit den gespeicherten Einstellungen und Ereignissen. Unter Windows/macOS wird das vorhandene Fenster ausgeblendet und wieder eingeblendet. Je ein Dateilock verhindert doppelte Hintergrundprozesse und doppelte Fenster/Tray-Symbole. Ohne verfügbares Tray schließt das Fenster wie bisher, und der Hintergrunddienst bleibt aktiv.
+There are no remote avatars, cloud relay, telemetry, or automatic application
+updates in Hush's code. Corporate proxies are not inherited automatically.
+See [SECURITY.md](docs/SECURITY.md) for further security boundaries.
 
-Ein Linksklick auf das Tray-Icon öffnet das Fenster oder holt es nach vorne. Ein Rechtsklick öffnet das Menü. Das Tray zeigt Dienststatus und Ungelesen-Zähler, ohne Ereignistitel oder Repository-Namen. Es bietet Öffnen, Einstellungen, Aktualisieren, 30 Minuten Pause/Fortsetzen, Dienst starten und „Hush beenden“. Diese letzte Aktion beendet Fenster, Tray und Dienst, sobald laufende API-Anfragen abgeschlossen sind. „Hintergrunddienst beenden“ in den Einstellungen oder `hush --stop` stoppt nur das Polling; das Tray bleibt erreichbar.
-
-- `hush --tray`: direkt im Tray starten; falls kein Tray verfügbar ist, wird das Fenster angezeigt. Die mitgelieferten Autostart-Vorlagen verwenden diesen Modus.
-- `hush --start`: nur den Dienst starten und dessen Start bestätigen lassen.
-- `hush --background`: Dienst im aufrufenden Prozess ausführen, ohne Fenster/Tray. Fehler stehen auf stderr.
-- `hush --status`: JSON mit `running`, `healthy`, `phase` und `service_error` sowie den bisherigen Statusfeldern.
-- `hush --demo`: reine Offline-Demo, ohne Dienst, Tray oder Kontodaten.
-
-Startfehler erscheinen in der Oberfläche und beim Start über `--start`. Das private Datenverzeichnis enthält außerdem `service.log` (unter Linux normalerweise `~/.local/share/hush/service.log`); bei einem neuen Dienststart wird dieses Fehlerprotokoll ersetzt. Unter Linux enthält `window.log` gegebenenfalls Fehler beim Öffnen des Fensters. Ein erfolgreicher Prozessstart zählt erst nach bestätigtem Heartbeat als erfolgreicher Dienststart. Gleichzeitige SQLite-Schreibzugriffe von Oberfläche, Worker und Heartbeat werden vor dem Lesen serialisiert, damit sie nicht an einem Lock-Upgrade scheitern. Die Dateivorbereitung erhält außerdem bestehende SQLite-Sperren, sodass Dienst und Oberfläche denselben Datenstand sehen.
-
-Ausloggen/Neustart beendet die Prozesse; Autostart erfolgt nur nach expliziter Einrichtung. System-Banner haben weiterhin keine Klick-Aktion.
-
-Die Übertragung ist **Polling, kein serverseitiger Push**. Standard: alle zwei Minuten, mindestens nach GitHubs `X-Poll-Interval`, bei Rate-Limits mit Wartezeit. Netzwerkunterbrechungen, Suchindex-Latenz, große Backlogs und fehlende Berechtigungen können zu Verzögerungen oder unvollständiger Erfassung führen.
-
-## Bewusste Grenzen von 0.1
-
-Keine GitHub-Projects-Boards, Gists, organisationsweiten Discussions, GitHub-Enterprise-Hosts, Multi-Account- oder Geräte-Synchronisation. Keine Garantie für Erwähnungen in Threads, die GitHub gar nicht in deinen Notifications liefert, für inzwischen gelöschte Ereignisse oder lückenlosen historischen Import. Die Freigabe eines Team-Reviews ist etwas anderes als eine Gruppen-Zuweisung an einen PR. Standardmäßig sind es direkte persönliche Erwähnungen, nicht jede Team-Erwähnung.
-
-Requests sind begrenzt: 8 MiB je Antwort, maximal zehn Seiten je Abfrage, 160 API-Aufrufe je Zyklus, 24 Thread-Aufgaben je Zyklus. Bei Notifications entspricht die Seitengrenze derzeit höchstens 500 Einträgen pro vollständiger Abfrage, bei vielen anderen Listen 1.000. Sehr große Threads/Backlogs bleiben mit Warnung offen, statt still einen erfolgreichen vollständigen Sync vorzutäuschen. Ein bei jeder Wiederholung zu großer Thread wird nicht automatisch aufgeteilt.
-
-Keine Remote-Avatare, kein Cloud-Relay, keine Telemetrie und keine automatischen Programm-Updates im eigenen Anwendungscode. Corporate-Proxys werden derzeit nicht automatisch übernommen. Weitere Sicherheitsgrenzen: [SECURITY.md](docs/SECURITY.md).
-
-## Projektstruktur
+## Project layout
 
 ```text
-src/ui/          Native egui-Oberfläche, Designsystem, Vektor-Icons, Offline-Demo
-src/api.rs       Begrenzter, nur lesender GitHub-Transport
-src/filter.rs    Konkrete Ereigniserkennung statt sticky Notification-Gründe
-src/engine.rs    Hintergrundprozess, Scheduling, Wiederholungen, Zustellung
-src/storage.rs   Private SQLite-Datenbank, IDs, Cursor, Aufgaben, Outbox
-src/secrets.rs   Betriebssystem-Schlüsselbund; kein Klartext-Fallback
-src/notify.rs    Native Banner, private Voreinstellung
-preview/         Historischer HTML-Prototyp
-scripts/         Darstellung exportierter nativer egui-Oberflächen
-packaging/       Benutzerinstallation und optionale Autostarts
-.github/         Release-Workflow mit Prüfung, Builds und Installern
+src/ui/          Native egui UI, design system, vector icons, offline demo
+src/api.rs       Bounded GitHub transport for repository read operations
+src/oauth.rs     Browser device authorization and token refresh
+src/filter.rs    Concrete event detection instead of sticky notification reasons
+src/engine.rs    Background process, scheduling, retries, delivery
+src/storage.rs   Private SQLite database, IDs, cursors, tasks, outbox
+src/secrets.rs   Operating-system keychain; no plaintext fallback
+src/notify.rs    Native banners, private by default
+preview/         Historical HTML prototype
+scripts/         Rendering of exported native egui interfaces
+packaging/       Per-user installation and optional autostart
+.github/         Release workflow with validation, builds, and installers
 ```
 
-## Primärquellen zur Implementierung
+## Primary implementation references
 
-GitHub: [Notifications](https://docs.github.com/en/rest/activity/notifications), [Issue-Timeline](https://docs.github.com/en/rest/issues/timeline), [PR-Reviews](https://docs.github.com/en/rest/pulls/reviews), [Issues](https://docs.github.com/en/rest/issues/issues), [Teams](https://docs.github.com/en/rest/teams/teams), [GraphQL-Objekte](https://docs.github.com/en/graphql/reference/objects), [Personal Access Tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
+GitHub: [Notifications](https://docs.github.com/en/rest/activity/notifications),
+[Issue timeline](https://docs.github.com/en/rest/issues/timeline),
+[PR reviews](https://docs.github.com/en/rest/pulls/reviews),
+[Issues](https://docs.github.com/en/rest/issues/issues),
+[Teams](https://docs.github.com/en/rest/teams/teams),
+[GraphQL objects](https://docs.github.com/en/graphql/reference/objects),
+[OAuth device flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow),
+[Personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
 
-Desktop: [eframe 0.36.2](https://docs.rs/eframe/0.36.2/eframe/), [keyring 3.6.3](https://docs.rs/keyring/3.6.3/keyring/), [notify-rust](https://docs.rs/notify-rust/latest/notify_rust/), [Dank Material Shell](https://danklinux.com/docs/dankmaterialshell/overview). Abgerufen bzw. gegengeprüft am 8. Oktober 2026. Dokumentation und APIs können sich ändern.
+Desktop: [eframe 0.36.2](https://docs.rs/eframe/0.36.2/eframe/),
+[keyring 3.6.3](https://docs.rs/keyring/3.6.3/keyring/),
+[notify-rust](https://docs.rs/notify-rust/latest/notify_rust/),
+[Dank Material Shell](https://danklinux.com/docs/dankmaterialshell/overview).
+The original implementation references were retrieved or cross-checked on
+October 8, 2026. Documentation and APIs may change.

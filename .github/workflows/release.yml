@@ -16,6 +16,7 @@ concurrency:
   cancel-in-progress: false
 env:
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  HUSH_GITHUB_CLIENT_ID: ${{ vars.HUSH_GITHUB_CLIENT_ID }}
 jobs:
   validate:
     name: Version, packaging and dependency audit

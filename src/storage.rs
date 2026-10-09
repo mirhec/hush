@@ -53,6 +53,9 @@ impl Paths {
         file.set_len(0)?;
         Ok(file)
     }
+    pub fn credentials_lock_file(&self) -> Result<File> {
+        private_file(&self.root.join("credentials.lock"))
+    }
     pub fn launch_lock_file(&self) -> Result<File> {
         private_file(&self.root.join("launch.lock"))
     }
@@ -153,8 +156,46 @@ impl Store {
     // first SELECT. DEFERRED upgrades can fail immediately with SQLITE_BUSY
     // when the worker, heartbeat and GUI write concurrently, bypassing the timeout.
     pub fn save_config(&mut self, config: &Config) -> Result<Config> {
-        let mut next = config.clone();
-        next.validate()?;
+        self.update_config(|_| config.clone())
+    }
+    /// A settings draft may predate an account change in another thread/process.
+    /// Preserve authentication and pause state under the same database write lock.
+    pub fn save_preferences(&mut self, preferences: &Config) -> Result<Config> {
+        self.update_config(|current| {
+            let mut next = preferences.clone();
+            next.login = current.login.clone();
+            next.oauth = current.oauth;
+            next.has_detail_token = current.has_detail_token;
+            next.read_org = current.read_org;
+            next.paused_until = current.paused_until;
+            next
+        })
+    }
+    /// Identity/keyring checks may take time. Commit only their account fields,
+    /// preserving preferences and tray changes made while those checks ran.
+    pub fn save_account(&mut self, account: &Config) -> Result<Config> {
+        self.update_config(|current| {
+            let mut next = current.clone();
+            next.login = account.login.clone();
+            next.oauth = account.oauth;
+            next.has_detail_token = account.has_detail_token;
+            next.read_org = account.read_org;
+            next
+        })
+    }
+    /// UI and tray toggles always use the latest stored state, never a snapshot.
+    pub fn toggle_pause(&mut self) -> Result<Config> {
+        self.update_config(|current| {
+            let mut next = current.clone();
+            next.paused_until = if current.paused() {
+                0
+            } else {
+                Utc::now().timestamp() + 1800
+            };
+            next
+        })
+    }
+    fn update_config(&mut self, update: impl FnOnce(&Config) -> Config) -> Result<Config> {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -165,10 +206,12 @@ impl Store {
             .map(|v| serde_json::from_str(&v))
             .transpose()?
             .unwrap_or_default();
+        let mut next = update(&previous);
+        next.validate()?;
         next.revision = previous.revision.saturating_add(1);
         tx.execute("INSERT INTO kv(key,value) VALUES('config',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [serde_json::to_string(&next)?])?;
+        tx.execute("INSERT INTO kv(key,value) VALUES('refresh','1') ON CONFLICT(key) DO UPDATE SET value='1'", [])?;
         tx.commit()?;
-        self.put("refresh", "1")?;
         Ok(next)
     }
     pub fn current_user(&self, login: &str) -> Result<bool> {
@@ -437,6 +480,187 @@ mod tests {
         let serialized = serde_json::to_string(&Config::default())?;
         assert!(!serialized.contains("ghp_"));
         assert!(!serialized.contains("password"));
+        Ok(())
+    }
+
+    #[test]
+    fn stale_preferences_preserve_a_new_oauth_session_and_pause() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = Paths::at(temp.path().join("data"))?;
+        let mut ui = Store::open(&paths)?;
+        let mut worker = Store::open(&paths)?;
+        ui.save_config(&Config {
+            login: "alice".into(),
+            has_detail_token: true,
+            ..Default::default()
+        })?;
+        let mut draft = ui.config()?;
+        draft.interval_secs = 300;
+        let session = worker.save_config(&Config {
+            login: "alice".into(),
+            oauth: true,
+            read_org: true,
+            paused_until: Utc::now().timestamp() + 1800,
+            ..Default::default()
+        })?;
+        ui.take_flag("refresh")?;
+        let saved = ui.save_preferences(&draft)?;
+        assert_eq!(saved.login, session.login);
+        assert_eq!(saved.oauth, session.oauth);
+        assert_eq!(saved.has_detail_token, session.has_detail_token);
+        assert_eq!(saved.read_org, session.read_org);
+        assert_eq!(saved.paused_until, session.paused_until);
+        assert_eq!(saved.interval_secs, 300);
+        assert_eq!(saved.revision, session.revision + 1);
+        assert!(ui.take_flag("refresh")?);
+        Ok(())
+    }
+
+    #[test]
+    fn saving_a_stale_draft_cannot_restore_a_disconnected_account() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = Paths::at(temp.path().join("data"))?;
+        let mut ui = Store::open(&paths)?;
+        let mut worker = Store::open(&paths)?;
+        let draft = ui.save_config(&Config {
+            login: "alice".into(),
+            oauth: true,
+            read_org: true,
+            ..Default::default()
+        })?;
+        worker.disconnect()?;
+        let saved = ui.save_preferences(&draft)?;
+        assert!(saved.login.is_empty());
+        assert!(!saved.oauth);
+        assert!(!saved.read_org);
+        assert!(!saved.has_detail_token);
+        assert_eq!(worker.ingest("alice", &[event()], false)?, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn preferences_wait_for_an_account_transaction_before_reading_its_state() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = Paths::at(temp.path().join("data"))?;
+        let mut ui = Store::open(&paths)?;
+        let draft = Config {
+            interval_secs: 60,
+            ..Default::default()
+        };
+        let mut worker = Store::open(&paths)?;
+        let (send, receive) = std::sync::mpsc::channel();
+        let writer = std::thread::spawn(move || -> Result<()> {
+            let transaction = worker
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let current = Config {
+                login: "alice".into(),
+                oauth: true,
+                read_org: true,
+                revision: 8,
+                ..Default::default()
+            };
+            transaction.execute(
+                "INSERT INTO kv(key,value) VALUES('config',?1)",
+                [serde_json::to_string(&current)?],
+            )?;
+            send.send(())?;
+            std::thread::sleep(StdDuration::from_millis(75));
+            transaction.commit()?;
+            Ok(())
+        });
+        receive.recv()?;
+        let result = ui.save_preferences(&draft);
+        writer.join().unwrap()?;
+        let saved = result?;
+        assert_eq!(saved.login, "alice");
+        assert!(saved.oauth);
+        assert!(saved.read_org);
+        assert_eq!(saved.interval_secs, 60);
+        assert_eq!(saved.revision, 9);
+        Ok(())
+    }
+
+    #[test]
+    fn simultaneous_pause_toggles_preserve_account_and_preferences() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = Paths::at(temp.path().join("data"))?;
+        let mut ui = Store::open(&paths)?;
+        let initial = ui.save_config(&Config {
+            login: "alice".into(),
+            oauth: true,
+            read_org: true,
+            interval_secs: 300,
+            show_preview: true,
+            ..Default::default()
+        })?;
+        let mut tray = Store::open(&paths)?;
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let worker_barrier = barrier.clone();
+        let worker = std::thread::spawn(move || {
+            worker_barrier.wait();
+            tray.toggle_pause()
+        });
+        barrier.wait();
+        let toggled = ui.toggle_pause();
+        worker.join().unwrap()?;
+        toggled?;
+        let mut expected = initial.clone();
+        expected.revision += 2;
+        assert_eq!(ui.config()?, expected);
+        assert!(ui.take_flag("refresh")?);
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_token_config_remains_valid_when_saving_preferences() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = Paths::at(temp.path().join("data"))?;
+        let mut store = Store::open(&paths)?;
+        store.put(
+            "config",
+            r#"{"login":"alice","has_detail_token":true,"read_org":true}"#,
+        )?;
+        let old = store.config()?;
+        assert!(!old.oauth);
+        let saved = store.save_preferences(&Config::default())?;
+        assert_eq!(saved.login, "alice");
+        assert!(saved.has_detail_token);
+        assert!(saved.read_org);
+        assert!(!saved.oauth);
+        Ok(())
+    }
+
+    #[test]
+    fn stale_account_snapshot_preserves_new_preferences_and_tray_pause() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let paths = Paths::at(temp.path().join("data"))?;
+        let mut ui = Store::open(&paths)?;
+        let mut account_worker = Store::open(&paths)?;
+        let mut account = account_worker.config()?;
+        account.login = "alice".into();
+        account.oauth = true;
+        account.read_org = true;
+
+        let mut preferences = ui.config()?;
+        preferences.interval_secs = 300;
+        preferences.show_preview = true;
+        preferences.desktop_notifications = false;
+        preferences.rules.mentions = false;
+        preferences.repositories = vec![crate::model::Repo::parse("alice/project")?];
+        preferences.manual_teams = vec![crate::model::Repo::parse("acme/team")?];
+        ui.save_preferences(&preferences)?;
+        let mut expected = ui.toggle_pause()?;
+        expected.login = account.login.clone();
+        expected.oauth = account.oauth;
+        expected.read_org = account.read_org;
+        expected.has_detail_token = account.has_detail_token;
+        expected.revision += 1;
+
+        ui.take_flag("refresh")?;
+        assert_eq!(account_worker.save_account(&account)?, expected);
+        assert_eq!(ui.config()?, expected);
+        assert!(ui.take_flag("refresh")?);
         Ok(())
     }
 }

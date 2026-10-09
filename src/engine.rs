@@ -1,10 +1,10 @@
 //! One background process per OS account, communicating with the GUI through private SQLite.
 //! No localhost HTTP server; no credential IPC; no writable commands downloaded from GitHub.
 use crate::{
-    api::{Api, ApiError, ApiResult, validate_scopes},
+    api::{Api, ApiError, ApiResult, validate_oauth_scopes, validate_scopes},
     filter,
     model::{Config, Event, Repo, RepositoryCheck, RuntimeStatus, ThreadTask},
-    notify,
+    notify, oauth,
     secrets::{self, Slot},
     storage::{Paths, Store},
 };
@@ -118,8 +118,13 @@ pub fn connect(
     token: Zeroizing<String>,
     details: Option<Zeroizing<String>>,
 ) -> Result<Config> {
+    let _credentials_lock = lock_credentials(paths)?;
     let mut store = Store::open(paths)?;
     let mut config = store.config()?;
+    ensure!(
+        !config.oauth,
+        "Zum Wechsel auf manuelle Tokens zuerst die GitHub-Verbindung trennen."
+    );
     let replace_primary = !token.trim().is_empty();
     let token = connection_token(&config, token, || secrets::read(Slot::Notifications))?;
     let old_detail = if details.is_none() && config.has_detail_token {
@@ -155,12 +160,68 @@ pub fn connect(
     if replace_primary {
         secrets::save(Slot::Notifications, token.as_str())?;
     }
+    // Preserve preferences changed while GitHub identity checks were in flight.
+    config = store.config()?;
     config.login = login;
     config.read_org = read_org;
     config.has_detail_token = detail_ref.is_some();
-    let saved = store.save_config(&config)?;
+    let saved = store.save_account(&config)?;
     store.retry_pending_tasks()?;
     Ok(saved)
+}
+
+/// Serialize reconnect, disconnect, and refresh so rotating tokens cannot overwrite a newer login.
+fn lock_credentials(paths: &Paths) -> Result<std::fs::File> {
+    let file = paths.credentials_lock_file()?;
+    let started = Instant::now();
+    loop {
+        match file.try_lock_exclusive() {
+            Ok(()) => return Ok(file),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                ensure!(
+                    started.elapsed() < Duration::from_secs(30),
+                    "Eine GitHub-Anmeldung wird noch verarbeitet. Bitte erneut versuchen."
+                );
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+pub fn connect_oauth(paths: &Paths, credentials: oauth::Credentials) -> Result<Config> {
+    let _credentials_lock = lock_credentials(paths)?;
+    let api = Api::new(&credentials.access_token, None)?;
+    let (login, scopes) = api.identity(true)?;
+    let read_org = validate_oauth_scopes(&scopes)?;
+    let mut store = Store::open(paths)?;
+    let mut config = store.config()?;
+    ensure!(
+        config.login.is_empty() || config.login.eq_ignore_ascii_case(&login),
+        "Für einen Kontowechsel zuerst das bisherige Konto trennen."
+    );
+    save_oauth_credentials(&credentials)?;
+    config.login = login;
+    config.oauth = true;
+    config.read_org = read_org;
+    config.has_detail_token = false;
+    let saved = store.save_account(&config)?;
+    store.retry_pending_tasks()?;
+    // The OAuth session now replaces both old credentials. Attempt both deletions.
+    let primary = secrets::delete(Slot::Notifications);
+    let details = secrets::delete(Slot::Details);
+    primary?;
+    details?;
+    Ok(saved)
+}
+
+fn save_oauth_credentials(credentials: &oauth::Credentials) -> Result<()> {
+    let serialized = Zeroizing::new(serde_json::to_string(credentials)?);
+    secrets::save(Slot::OAuth, serialized.as_str())
+}
+
+fn session_needs_refresh(expires_at: Option<i64>, now: i64) -> bool {
+    expires_at.is_some_and(|expires| expires <= now.saturating_add(120))
 }
 
 fn connection_token(
@@ -179,13 +240,16 @@ fn connection_token(
 }
 
 pub fn disconnect(paths: &Paths) -> Result<()> {
+    let _credentials_lock = lock_credentials(paths)?;
     let mut store = Store::open(paths)?;
     // Invalidate the account first. In-flight responses cannot be inserted into the new account.
     store.disconnect()?;
     let a = secrets::delete(Slot::Notifications);
     let b = secrets::delete(Slot::Details);
+    let c = secrets::delete(Slot::OAuth);
     a?;
     b?;
+    c?;
     Ok(())
 }
 
@@ -242,7 +306,7 @@ pub fn run_background(paths: Paths) -> Result<()> {
         status.service_error = None;
         store.save_status(&status)?;
         let _heartbeat = Heartbeat::start(&paths)?;
-        run_loop(&mut store)
+        run_loop(&paths, &mut store)
     })();
     let mut status = store.status().unwrap_or_default();
     status.phase = if result.is_ok() {
@@ -257,7 +321,37 @@ pub fn run_background(paths: Paths) -> Result<()> {
     result
 }
 
-fn make_session(cfg: &Config) -> Result<Api> {
+fn make_session(paths: &Paths, cfg: &Config) -> Result<Api> {
+    let _credentials_lock = lock_credentials(paths)?;
+    let current = Store::open(paths)?.config()?;
+    ensure!(
+        current.login.eq_ignore_ascii_case(&cfg.login) && current.oauth == cfg.oauth,
+        "GitHub-Verbindung wurde inzwischen geändert. Erneuter Versuch folgt."
+    );
+    if cfg.oauth {
+        let raw = secrets::read(Slot::OAuth)?
+            .context("GitHub-Anmeldung fehlt. Bitte erneut anmelden.")?;
+        let mut credentials: oauth::Credentials =
+            serde_json::from_str(raw.as_str()).map_err(|_| {
+                anyhow::anyhow!(
+                    "Gespeicherte GitHub-Anmeldung ist ungültig. Bitte erneut anmelden."
+                )
+            })?;
+        if session_needs_refresh(credentials.expires_at, Utc::now().timestamp()) {
+            credentials = oauth::refresh(&credentials)?;
+            // Persist rotated tokens before further requests: the previous refresh token is invalid now.
+            save_oauth_credentials(&credentials)?;
+        }
+        let mut api = Api::new(&credentials.access_token, None)?;
+        api.expires_at = credentials.expires_at;
+        let (login, scopes) = api.identity(true)?;
+        ensure!(
+            login.eq_ignore_ascii_case(&cfg.login),
+            "Gespeicherte GitHub-Anmeldung gehört zu einem anderen Konto. Bitte erneut anmelden."
+        );
+        validate_oauth_scopes(&scopes)?;
+        return Ok(api);
+    }
     let primary = secrets::read(Slot::Notifications)?
         .context("Kein Token im Schlüsselbund. Bitte neu verbinden.")?;
     let detail = if cfg.has_detail_token {
@@ -274,7 +368,7 @@ fn make_session(cfg: &Config) -> Result<Api> {
     validate_scopes(&scopes)?;
     Ok(api)
 }
-fn run_loop(store: &mut Store) -> Result<()> {
+fn run_loop(paths: &Paths, store: &mut Store) -> Result<()> {
     let mut revision = u64::MAX;
     let mut api: Option<Api> = None;
     let mut next = Instant::now();
@@ -317,8 +411,13 @@ fn run_loop(store: &mut Store) -> Result<()> {
             thread::sleep(Duration::from_secs(1));
             continue;
         }
+        if api.as_ref().is_some_and(|session| {
+            session_needs_refresh(session.expires_at, Utc::now().timestamp())
+        }) {
+            api = None;
+        }
         if api.is_none() {
-            match make_session(&cfg) {
+            match make_session(paths, &cfg) {
                 Ok(session) => {
                     api = Some(session);
                 }

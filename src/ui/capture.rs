@@ -18,6 +18,7 @@ fn export_native_ui_frames() {
         ("settings-small", 360., 480., Page::Settings, false, false),
         ("inbox-light", 440., 640., Page::Inbox, false, true),
         ("account", 440., 640., Page::Settings, false, false),
+        ("account-oauth", 360., 480., Page::Settings, false, false),
         ("account-small", 360., 480., Page::Settings, false, false),
         ("diagnostics", 360., 480., Page::Settings, false, false),
     ] {
@@ -43,6 +44,16 @@ fn export_native_ui_frames() {
             app.status.last_sync = Some(Utc::now().timestamp());
             app.config.login.clear();
             app.draft = app.config.clone();
+        }
+        if name == "account-oauth" {
+            let (_send, events) = mpsc::channel();
+            app.oauth_login = Some(OAuthLogin {
+                events,
+                cancel: Arc::new(AtomicBool::new(false)),
+                user_code: Some("TEST-CODE".into()),
+                verification_uri: Some("https://github.com/login/device".into()),
+                expires_at: Some(Instant::now() + Duration::from_secs(900)),
+            });
         }
         if name == "diagnostics" {
             app.settings_tab = SettingsTab::Diagnostics;

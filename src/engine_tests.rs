@@ -160,3 +160,25 @@ fn credentials_changed_retry_deferred_threads_immediately() {
     store.retry_pending_tasks().unwrap();
     assert_eq!(store.tasks(24).unwrap()[0].id, task.id);
 }
+
+#[test]
+fn oauth_scopes_allow_repository_access_without_weakening_manual_token_checks() {
+    let scopes = ["repo", "read:org", "notifications", "offline_access"].map(String::from);
+    assert!(validate_oauth_scopes(&scopes).unwrap());
+    assert!(validate_scopes(&scopes).is_err());
+    assert!(!validate_oauth_scopes(&["repo".into()]).unwrap());
+    assert!(validate_oauth_scopes(&["notifications".into()]).is_err());
+    assert!(validate_oauth_scopes(&["repo".into(), "delete_repo".into()]).is_err());
+}
+
+#[test]
+fn oauth_refreshes_before_expiry_and_preserves_legacy_config() {
+    assert!(!session_needs_refresh(None, 1000));
+    assert!(!session_needs_refresh(Some(1121), 1000));
+    assert!(session_needs_refresh(Some(1120), 1000));
+    assert!(session_needs_refresh(Some(900), 1000));
+    let legacy: Config =
+        serde_json::from_str(r#"{"login":"alex","has_detail_token":true}"#).unwrap();
+    assert!(!legacy.oauth);
+    assert!(legacy.has_detail_token);
+}

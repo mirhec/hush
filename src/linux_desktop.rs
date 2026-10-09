@@ -6,7 +6,6 @@ use crate::{
     tray::{Event, State, Tray},
 };
 use anyhow::{Context, Result};
-use chrono::Utc;
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -164,15 +163,7 @@ pub fn run(paths: Paths, start_in_tray: bool) -> Result<()> {
                     Ok(())
                 }
                 Event::Refresh => store.request_refresh(),
-                Event::Pause => {
-                    let mut config = store.config()?;
-                    config.paused_until = if config.paused() {
-                        0
-                    } else {
-                        Utc::now().timestamp() + 1800
-                    };
-                    store.save_config(&config).map(|_| ())
-                }
+                Event::Pause => store.toggle_pause().map(|_| ()),
                 Event::Start => engine::launch(&paths),
                 Event::Quit => {
                     quitting = true;
@@ -210,11 +201,7 @@ pub fn run(paths: Paths, start_in_tray: bool) -> Result<()> {
         tray.update(State {
             running: engine::is_running(&paths)? && runtime.alive(),
             paused: config.paused(),
-            unread: store
-                .events()?
-                .iter()
-                .filter(|e| e.unread)
-                .count(),
+            unread: store.events()?.iter().filter(|e| e.unread).count(),
             warning: runtime.notification_error.is_some()
                 || !runtime.warnings.is_empty()
                 || runtime.service_error.is_some()
