@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 ; NSIS 3 Unicode installer. Version defines come from packaging/version.py.
 Unicode true
 !ifndef HushVersion
@@ -6,7 +7,7 @@ Unicode true
 !ifndef HushNumericVersion
   !error "HushNumericVersion must be supplied by packaging/version.py"
 !endif
-!define SourceRoot "../.."
+!define SourceRoot "..\.."
 !define AppId "io.hush.github"
 !define UninstallKey "Software\Microsoft\Windows\CurrentVersion\Uninstall\${AppId}"
 !define LegacyUninstallKey "${UninstallKey}_is1"
@@ -17,11 +18,11 @@ Unicode true
 !include "FileFunc.nsh"
 !include "WinVer.nsh"
 !include "x64.nsh"
-!include "Win/COM.nsh"
-!include "Win/Propkey.nsh"
+!include "Win\COM.nsh"
+!include "Win\Propkey.nsh"
 
 Name "Hush ${HushVersion}"
-OutFile "${SourceRoot}/dist/Hush-${HushVersion}-windows-x86_64-setup.exe"
+OutFile "${SourceRoot}\dist\Hush-${HushVersion}-windows-x86_64-setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\Hush"
 RequestExecutionLevel user
 ManifestSupportedOS Win10
@@ -34,10 +35,10 @@ VIAddVersionKey /LANG=1033 "ProductName" "Hush"
 VIAddVersionKey /LANG=1033 "FileDescription" "Hush installer"
 VIAddVersionKey /LANG=1033 "FileVersion" "${HushVersion}"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Hush contributors"
-!define MUI_ICON "${SourceRoot}/assets/hush.ico"
-!define MUI_UNICON "${SourceRoot}/assets/hush.ico"
+!define MUI_ICON "${SourceRoot}\assets\hush.ico"
+!define MUI_UNICON "${SourceRoot}\assets\hush.ico"
 !define MUI_ABORTWARNING
-!insertmacro MUI_PAGE_LICENSE "${SourceRoot}/LICENSE"
+!insertmacro MUI_PAGE_LICENSE "${SourceRoot}\LICENSE"
 !insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\hush.exe"
@@ -200,12 +201,12 @@ Section "Hush" MainSection
   !insertmacro RequireHushClosed
   ClearErrors
   SetOutPath "$INSTDIR"
-  File "${SourceRoot}/target/release/hush.exe"
-  File "${SourceRoot}/assets/hush.ico"
-  File "${SourceRoot}/LICENSE"
+  File "${SourceRoot}\target\release\hush.exe"
+  File "${SourceRoot}\assets\hush.ico"
+  File "${SourceRoot}\LICENSE"
   SetOutPath "$INSTDIR\licenses\fonts"
-  File "${SourceRoot}/assets/fonts/OFL.txt"
-  File "${SourceRoot}/assets/fonts/README.md"
+  File "${SourceRoot}\assets\fonts\OFL.txt"
+  File "${SourceRoot}\assets\fonts\README.md"
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\uninstall.exe"
   CreateDirectory "$SMPROGRAMS"
