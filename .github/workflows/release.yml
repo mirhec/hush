@@ -86,12 +86,23 @@ jobs:
           sudo apt-get install -y build-essential pkg-config libdbus-1-dev libx11-dev libxi-dev libxrandr-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libglib2.0-dev flatpak flatpak-builder dbus-daemon
       - name: Rust toolchain
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - name: Check Windows installer compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
+          if (!(Test-Path $compiler)) { throw 'NSIS 3 is required on the Windows runner' }
+          & $compiler /VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS compiler check failed' }
       - name: Apply release tag and validate packaging contracts
         shell: bash
         run: |
           rustc --version
           python3 packaging/version.py --stamp --tag "$RELEASE_TAG" --github-env "$GITHUB_ENV"
           python3 -m unittest discover -s tests -p 'test_packaging.py'
+      - name: Windows installer upgrade and uninstall tests
+        if: runner.os == 'Windows'
+        run: python3 tests/windows_installer_smoke.py
       - name: Core tests (no keyring or GitHub account)
         run: cargo test --locked --no-default-features
       - name: Desktop and regression tests

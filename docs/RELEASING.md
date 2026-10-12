@@ -22,7 +22,7 @@ the workflow before the expensive platform builds.
 
 | Platform | Release asset | Installation |
 |---|---|---|
-| Windows x86-64 | `Hush-VERSION-windows-x86_64-setup.exe` | Inno Setup, per user, with uninstaller |
+| Windows x86-64 | `Hush-VERSION-windows-x86_64-setup.exe` | NSIS 3, per user, with uninstaller |
 | macOS Apple Silicon | `Hush-VERSION-macos-arm64.pkg` | `/Applications/Hush.app` |
 | macOS Intel | `Hush-VERSION-macos-x86_64.pkg` | `/Applications/Hush.app` |
 | Linux x86-64 | `Hush-VERSION-linux-x86_64.flatpak` | Flatpak, per user |
@@ -34,6 +34,19 @@ and records uninstall cleanup even when autostart is enabled later from Hush.
 Uninstalling preserves account data and history; use Hush's
 disconnect-and-delete action first to remove them if needed. Disable autostart
 before manually removing a native macOS/Linux installation.
+
+Windows packages are built with **NSIS 3**, whose license permits commercial
+use without a license fee. Only NSIS's bundled plug-ins are used. The workflow
+checks for `NSIS\makensis.exe` on the Windows runner before testing or building.
+No Inno Setup compiler or license is used.
+
+Updates reuse an existing installation's directory and refresh its shortcuts.
+The first NSIS upgrade also replaces the old packager's uninstall registration
+and removes its registered `unins*.exe` and companion data only inside that
+installation directory. Close Hush using **Quit** in its tray menu before
+upgrading or uninstalling. Silent installations (`/S`) fail if Hush is still
+running. The optional desktop shortcut is unchecked on a fresh installation;
+an existing shortcut is kept during upgrades.
 
 ## Release process
 
@@ -65,6 +78,10 @@ A failed run can be restarted. "Run workflow" also accepts the tag of an existin
 release. Uploads replace assets with matching filenames; immutable GitHub
 releases do not allow this after publication. Release immutability would require
 publishing after asset upload; this pipeline explicitly uses `published`.
+
+Both retry methods build the selected tag's source. After a source or packaging
+fix, publish a new tag containing the fix; rerunning an older tag does not pick
+up changes from `main`.
 
 The Flatpak pipeline installs the built bundle in the CI profile and checks the
 application version, service startup, and status without GitHub credentials. A
@@ -137,7 +154,7 @@ with `stapler`. Signing errors fail the run.
 SignTool signs the executable first, then the completed installer, and verifies
 both signatures. The temporary PFX file is removed afterward. Hardware-bound or
 cloud signing keys require integration with the relevant provider instead of
-the PFX script. In this setup, the Inno uninstaller does not receive its own
+the PFX script. In this setup, the NSIS uninstaller does not receive its own
 Authenticode signature.
 
 ## Linux: Flatpak
@@ -189,6 +206,21 @@ python3 packaging/version.py
 cargo test --locked --all-targets
 ```
 
+On Windows, the packaging tests require NSIS 3 and compile the real
+installer script with a temporary placeholder executable. This catches installer
+syntax and input-file errors before the Rust build in the release workflow. The
+test creates no installed application and keeps its package outside `dist/`.
+On other systems it runs if `makensis` is on `PATH`, otherwise it skips
+only the compiler test. This does not replace target-system installation tests.
+
+The Windows Actions job also runs `python3 tests/windows_installer_smoke.py`
+before compiling Rust. In its fresh runner profile, it installs a placeholder
+package, checks shortcut identity, upgrades with autostart enabled and disabled,
+uninstalls without removing user data, and checks migration from legacy installer
+metadata. The test refuses existing Hush installations. For local Linux checks,
+`python3 tests/windows_installer_smoke.py --wine` uses a temporary Wine prefix
+and requires NSIS, Wine, and a display (which can be Xvfb).
+
 For a local release build in a separate source copy, first run
 `python3 packaging/version.py --stamp --tag v1.0.2`, then build with Cargo and
 package the result. The command updates both Cargo files in that copy.
@@ -199,7 +231,7 @@ On macOS, after `cargo build --release`:
 bash packaging/macos/package.sh
 ```
 
-On Windows with Inno Setup 6, after `cargo build --release`:
+On Windows with NSIS 3, after `cargo build --release`:
 
 ```powershell
 ./packaging/windows/package.ps1
@@ -218,8 +250,9 @@ preparation were validated locally. These historical results do not replace
 validation of a new release on each target system.
 
 References: [GitHub release events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#release),
-[Inno Setup: per-user installation](https://jrsoftware.org/ishelp/topic_setup_privilegesrequired.htm),
-[AppUserModelID in shortcuts](https://jrsoftware.org/ishelp/topic_iconssection.htm),
+[NSIS license](https://nsis.sourceforge.io/License),
+[NSIS per-user installation](https://nsis.sourceforge.io/Reference/RequestExecutionLevel),
+[AppUserModelID in shortcuts](https://learn.microsoft.com/en-us/windows/win32/shell/appids),
 [Apple packaging](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution),
 [Flatpak desktop integration](https://docs.flatpak.org/en/latest/desktop-integration.html),
 [Background portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Background.html),
