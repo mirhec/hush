@@ -33,7 +33,7 @@ The test forces the CPU adapter, renders the real offline demo, reads back a
 screenshot with nonblank UI pixels, and closes the window deliberately. This
 confirms native DX12/WARP rendering on the affected VM. It does not exercise
 the normal launch, tray, background service, account, or notifications; these
-remain separate checks. No new GitHub release has been published for this fix.
+remain separate checks. These diagnostic builds preceded the 1.7.0 release.
 
 ### Follow-up: occupied Windows file locks
 
@@ -63,6 +63,21 @@ The first parallel Linux regression run caught a test-only fork/exec timing
 window: another process test could briefly inherit a lock descriptor. Explicitly
 unlocking the test-owned file before checking release removed that race; the
 production contention check was unchanged.
+
+### Release 1.7.0 preparation
+
+The native Windows preflight run
+[38376158513](https://github.com/mirhec/hush/actions/runs/38376158513)
+passed installer installation/upgrade/uninstall checks, core tests, and the
+desktop regression suite with `HUSH_WINDOWS_GRAPHICS_TEST=1`. This verifies
+both the complete worker lifecycle and actual DX12/WARP rendering on Windows.
+The affected Dockur VM's normal launch was separately confirmed by the user.
+Local core tests passed again: 76 tests plus the standalone worker lifecycle.
+
+The regular 1.7.0 release pipeline additionally gates package publication on all
+four platform builds, native Windows release-mode rendering, dependency import
+checks before NSIS packaging, and generation of the complete checksum manifest.
+Real login autostart and account notifications remain separate acceptance checks.
 
 ## Cross-platform login startup
 
