@@ -5,6 +5,24 @@ results describe the code and environment at that time, including features that
 have since changed. They are not a claim that every check was rerun against the
 latest revision.
 
+## Release 1.8.0 signing preparation — October 13, 2026
+
+Release signing no longer silently skips missing credentials. The workflow
+requires signing configuration before platform builds and checks trusted,
+embedded Authenticode signatures with timestamps on both `hush.exe` and setup
+before artifact upload.
+
+Native Windows checks exercise rejection of unsigned files, missing signing
+credentials, tampered executables, and untrusted self-signed certificates. The
+positive fixture is the runner's Microsoft-signed PowerShell executable. Test
+certificates are removed afterward; no trusted root is installed.
+
+Production signing remains unverified until the project has a publicly trusted
+signing identity. Repository secret/variable and environment-name checks found
+no configured credentials on October 13. No 1.8.0 tag or release is published
+while that prerequisite is missing. The existing PFX signer is supported;
+hardware-backed or cloud signers need their provider's integration.
+
 ## Windows startup on Dockur without OpenGL 2.0 — October 13, 2026
 
 The user reproduced the Release 1.6.0 startup failure on Windows 11 in Dockur:

@@ -43,7 +43,10 @@ try {
 
     $certificate = New-SelfSignedCertificate -Type CodeSigningCert `
         -Subject 'CN=Hush CI untrusted test certificate' -CertStoreLocation Cert:\CurrentUser\My
-    Set-AuthenticodeSignature -LiteralPath $unsigned -Certificate $certificate -HashAlgorithm SHA256 | Out-Null
+    $testSignature = Set-AuthenticodeSignature -LiteralPath $unsigned -Certificate $certificate -HashAlgorithm SHA256
+    if (!$testSignature.SignerCertificate -or $testSignature.SignerCertificate.Thumbprint -ne $certificate.Thumbprint) {
+        throw 'The untrusted signature fixture was not created'
+    }
     Assert-Rejected { & $verify -File $unsigned } 'trusted Authenticode signature'
     Write-Host 'Self-signed certificate without public trust is rejected: OK'
 } finally {
