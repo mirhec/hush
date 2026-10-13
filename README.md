@@ -365,7 +365,9 @@ and builds Linux x86-64, Windows x86-64, macOS Apple Silicon and Intel, and uplo
 all installers and SHA-256 checksums. Pushes to `main`, tag pushes, and pull
 requests do not start Actions. An existing release can be rebuilt manually.
 Signing and Apple notarization can be configured through GitHub secrets.
-Without certificates, installers remain unsigned.
+Windows releases require a trusted, timestamped signature on the executable and
+setup; missing signing credentials stop publication. macOS installers remain
+unsigned unless signing certificates are configured.
 
 For Linux x86-64, the workflow creates a Flatpak bundle. Install it with
 `flatpak install --user Hush-1.0.0-linux-x86_64.flatpak` and launch with

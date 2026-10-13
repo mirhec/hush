@@ -25,6 +25,14 @@ jobs:
     outputs:
       commit: ${{ steps.source.outputs.commit }}
     steps:
+      - name: Require Windows release signing configuration
+        env:
+          WINDOWS_SIGNING_CONFIGURED: ${{ secrets.WINDOWS_CERTIFICATE_PFX != '' && vars.WINDOWS_TIMESTAMP_URL != '' }}
+        run: |
+          if [[ "$WINDOWS_SIGNING_CONFIGURED" != true ]]; then
+            echo '::error::Configure a trusted Windows code-signing certificate and timestamp URL before publishing a release.'
+            exit 1
+          fi
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
@@ -103,6 +111,10 @@ jobs:
       - name: Windows installer upgrade and uninstall tests
         if: runner.os == 'Windows'
         run: python3 tests/windows_installer_smoke.py
+      - name: Windows signature verification tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tests/windows_signing_smoke.ps1
       - name: Core tests (no keyring or GitHub account)
         run: cargo test --locked --no-default-features
       - name: Desktop and regression tests
@@ -180,6 +192,12 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
         run: ./packaging/windows/sign.ps1 -File "dist/Hush-${env:HUSH_VERSION}-windows-x86_64-setup.exe"
+      - name: Require signed Windows release artifacts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./packaging/windows/verify-signature.ps1 -File target/release/hush.exe
+          ./packaging/windows/verify-signature.ps1 -File "dist/Hush-${env:HUSH_VERSION}-windows-x86_64-setup.exe"
       - name: Upload packages
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified 2026-10-08
         with:

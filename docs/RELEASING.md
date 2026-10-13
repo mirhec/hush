@@ -50,6 +50,11 @@ an existing shortcut is kept during upgrades.
 
 ## Release process
 
+Windows releases require a trusted, timestamped Authenticode signature on both
+the application and setup. Configure and validate the signing identity before
+creating a release tag. Missing signing configuration stops the workflow before
+platform builds; unsigned artifacts are never accepted for publication.
+
 1. Push the desired changes to `main`.
 2. Publish a GitHub release with a new tag pointing to that revision, such as
    `1.0.2` or `v1.0.2`. The Cargo version does not need to be changed.
@@ -123,11 +128,11 @@ new tag.
 
 ## Signing
 
-Without certificates, Windows/macOS installers are unsigned. The macOS app
-bundle then has only an ad-hoc signature, without Apple notarization. Gatekeeper
-or SmartScreen can warn about or block installation. For public distribution,
-configure the following GitHub Actions secrets; never commit certificates or
-passwords to the repository.
+Windows release signing is mandatory starting with the 1.8.0 preparation.
+Releases through 1.7.0 permitted unsigned Windows installers. macOS signing
+remains optional: without certificates its app bundle has only an ad-hoc
+signature, without Apple notarization. Configure the following GitHub Actions
+secrets; never commit certificates or passwords to the repository.
 
 **macOS:**
 
@@ -152,10 +157,25 @@ with `stapler`. Signing errors fail the run.
   timestamp URL.
 
 SignTool signs the executable first, then the completed installer, and verifies
-both signatures. The temporary PFX file is removed afterward. Hardware-bound or
+both signatures. An independent check before artifact upload requires a valid,
+embedded Authenticode signature and timestamp on both files. Missing credentials,
+untrusted/self-signed certificates, changed signed files, and missing timestamps
+fail the release instead of silently falling back to unsigned packages.
+`tests/windows_signing_smoke.ps1` exercises the Windows trust checks with the
+Microsoft-signed PowerShell executable, unsigned/tampered fixtures, and an
+untrusted disposable certificate; it never installs a trusted test root.
+
+The temporary PFX file is removed afterward. Hardware-bound or
 cloud signing keys require integration with the relevant provider instead of
 the PFX script. In this setup, the NSIS uninstaller does not receive its own
 Authenticode signature.
+
+A publicly trusted code-signing identity must be obtained from a certificate
+authority or signing service; a self-signed certificate does not establish
+public publisher trust. Valid signing identifies the publisher, but new binaries
+can still show a SmartScreen reputation warning. See Microsoft's
+[code signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options)
+and [SmartScreen guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
 
 ## Linux: Flatpak
 

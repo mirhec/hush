@@ -1,8 +1,7 @@
 param([Parameter(Mandatory)][string]$File)
 $ErrorActionPreference = 'Stop'
 if (!$env:WINDOWS_CERTIFICATE_PFX) {
-    Write-Host 'Building without an Authenticode signature.'
-    return
+    throw 'Windows release signing requires WINDOWS_CERTIFICATE_PFX. Configure a trusted code-signing certificate before publishing a release.'
 }
 if (!$env:RUNNER_TEMP) { throw 'Signing is intended for GitHub-hosted runners' }
 if (!$env:WINDOWS_TIMESTAMP_URL) { throw 'WINDOWS_TIMESTAMP_URL is required for signing' }
@@ -16,6 +15,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed' }
     & $tool.FullName verify /pa $File
     if ($LASTEXITCODE -ne 0) { throw 'Authenticode verification failed' }
+    & "$PSScriptRoot/verify-signature.ps1" -File $File
 } finally {
     Remove-Item $certificate -Force -ErrorAction SilentlyContinue
 }
