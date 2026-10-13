@@ -221,6 +221,30 @@ metadata. The test refuses existing Hush installations. For local Linux checks,
 `python3 tests/windows_installer_smoke.py --wine` uses a temporary Wine prefix
 and requires NSIS, Wine, and a display (which can be Xvfb).
 
+After the Windows release build, `tests/windows_graphics.rs` renders the real
+offline demo through DX12 with the CPU/WARP adapter explicitly selected, then
+reads back a screenshot and checks that it contains UI pixels. Set
+`HUSH_WINDOWS_GRAPHICS_TEST=1` and run
+`cargo test --locked --release --test windows_graphics` on Windows to run it
+locally. Normal cross-platform test runs skip this native rendering check.
+The test uses no account, database, keyring, tray, or network. A 45-second
+watchdog turns graphics initialization hangs into failures.
+
+`cargo test --locked --test worker_lifecycle` also runs a real worker lifecycle
+on Windows, Linux, and macOS: launch confirmation, repeated launch, duplicate
+worker rejection, continuing heartbeat, stop, and restart. Its test executable
+handles the worker subprocess entry point and shares a temporary fixture path
+only with its own children. It never opens the user's Hush profile or credentials.
+It runs as part of the normal core/desktop test jobs and can also be distributed
+as a standalone diagnostic executable for a Windows machine.
+
+The packager uses Visual Studio's `dumpbin` to reject executables importing the
+separate VC++ runtime or OpenGL. Keep `.cargo/config.toml` in build source copies:
+its Windows `crt-static` setting is part of the packaging contract. The DX12
+renderer uses Windows' FXC compiler, so no DXC DLLs need to be bundled.
+Cross-compilation and import inspection alone do not verify the window, tray,
+or graphics behavior in a real Windows session.
+
 For a local release build in a separate source copy, first run
 `python3 packaging/version.py --stamp --tag v1.0.2`, then build with Cargo and
 package the result. The command updates both Cargo files in that copy.

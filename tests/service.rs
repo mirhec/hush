@@ -8,6 +8,56 @@ use rusqlite::{Connection, TransactionBehavior};
 use std::{sync::mpsc, thread, time::Duration};
 
 #[test]
+fn occupied_worker_lock_reports_running_and_rejects_a_duplicate_worker() -> Result<()> {
+    use fs2::FileExt;
+    let temp = tempfile::tempdir()?;
+    let paths = Paths::at(temp.path().join("data"))?;
+    let owner = paths.lock_file()?;
+    owner.try_lock_exclusive()?;
+    // Before the fix these return Windows ERROR_LOCK_VIOLATION (33).
+    assert!(hush::engine::is_running(&paths)?);
+    hush::engine::run_background(paths.clone())?;
+    assert!(hush::engine::is_running(&paths)?);
+    assert!(
+        !paths.db().exists(),
+        "A duplicate worker must not change data"
+    );
+    // Another parallel process test can briefly inherit this descriptor between
+    // fork and exec on Unix. Explicit unlock releases the shared lock immediately.
+    FileExt::unlock(&owner)?;
+    drop(owner);
+    assert!(!hush::engine::is_running(&paths)?);
+    Ok(())
+}
+
+#[test]
+fn launch_waits_for_another_launcher_then_recognizes_its_healthy_worker() -> Result<()> {
+    use fs2::FileExt;
+    let temp = tempfile::tempdir()?;
+    let paths = Paths::at(temp.path().join("data"))?;
+    let store = Store::open(&paths)?;
+    let worker_lock = paths.lock_file()?;
+    worker_lock.try_lock_exclusive()?;
+    let launch_lock = paths.launch_lock_file()?;
+    launch_lock.try_lock_exclusive()?;
+    let (tx, rx) = mpsc::channel();
+    let other_paths = paths.clone();
+    let launcher = thread::spawn(move || {
+        tx.send(hush::engine::launch(&other_paths)).unwrap();
+    });
+    assert!(matches!(
+        rx.recv_timeout(Duration::from_millis(150)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    store.put("heartbeat", &chrono::Utc::now().timestamp().to_string())?;
+    drop(launch_lock);
+    rx.recv_timeout(Duration::from_secs(3))??;
+    launcher.join().unwrap();
+    assert!(hush::engine::is_running(&paths)?);
+    Ok(())
+}
+
+#[test]
 fn commands_and_settings_wait_for_a_concurrent_writer() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let paths = Paths::at(temp.path().join("data"))?;

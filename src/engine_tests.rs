@@ -2,6 +2,25 @@ use super::*;
 use chrono::Duration as ChronoDuration;
 use serde_json::json;
 
+#[test]
+fn credential_updates_wait_for_the_existing_lock_owner() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let paths = Paths::at(temp.path().join("data"))?;
+    let owner = lock_credentials(&paths)?;
+    let (tx, rx) = mpsc::channel();
+    let waiter = thread::spawn(move || {
+        tx.send(lock_credentials(&paths).map(drop)).unwrap();
+    });
+    assert!(matches!(
+        rx.recv_timeout(Duration::from_millis(150)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    drop(owner);
+    rx.recv_timeout(Duration::from_secs(3))??;
+    waiter.join().unwrap();
+    Ok(())
+}
+
 fn database() -> (tempfile::TempDir, Store, Config) {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(&Paths::at(dir.path().join("data")).unwrap()).unwrap();

@@ -35,7 +35,7 @@ fn save_status(store: &Store, status: &DesktopStatus) -> Result<()> {
 fn try_lock(file: File) -> Result<Option<File>> {
     match file.try_lock_exclusive() {
         Ok(()) => Ok(Some(file)),
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+        Err(e) if crate::locking::is_contended(&e) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }

@@ -9,9 +9,22 @@ use hush::{
     storage::{Paths, Store},
 };
 
+#[cfg(any(target_os = "windows", test))]
+mod startup;
+
 fn main() {
+    #[cfg(target_os = "windows")]
+    let show_error = startup::is_gui_launch(std::env::args().nth(1).as_deref());
+    #[cfg(target_os = "windows")]
+    if show_error {
+        startup::install_panic_hook();
+    }
     if let Err(error) = run() {
         eprintln!("Hush: {error:#}");
+        #[cfg(target_os = "windows")]
+        if show_error {
+            startup::report(&format!("{error:#}"));
+        }
         std::process::exit(1);
     }
 }
@@ -95,7 +108,7 @@ fn desktop(
         let file = paths.window_lock_file()?;
         match file.try_lock_exclusive() {
             Ok(()) => Some(file),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(error) if hush::locking::is_contended(&error) => {
                 if !start_hidden {
                     store.as_ref().unwrap().put("show_window", "1")?;
                 }
@@ -118,9 +131,8 @@ fn desktop(
             .with_min_inner_size([360., 480.])
             .with_visible(!start_hidden)
             .with_icon(hush::tray::icon()),
-        renderer: eframe::Renderer::Glow,
         persist_window: false,
-        ..Default::default()
+        ..hush::graphics::native_options()
     };
     eframe::run_native(
         "Hush",

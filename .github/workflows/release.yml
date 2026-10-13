@@ -116,6 +116,11 @@ jobs:
         run: cargo clippy --locked --all-targets
       - name: Release build
         run: cargo build --locked --release
+      - name: Windows DX12 software rendering
+        if: runner.os == 'Windows'
+        env:
+          HUSH_WINDOWS_GRAPHICS_TEST: '1'
+        run: cargo test --locked --release --test windows_graphics
       - name: Install Flatpak build runtime
         if: runner.os == 'Linux'
         run: |

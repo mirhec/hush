@@ -324,6 +324,36 @@ release executable does not open a separate console window. CLI
 output redirection/`--status` on Windows has not been tested; the status helper
 is primarily intended for Linux.
 
+Windows builds from this source use DirectX 12 with the Windows WARP software
+adapter as a fallback for VMs without a suitable hardware GPU. They use the
+Windows-provided FXC shader compiler and statically link the Visual C++ runtime.
+Linux and macOS continue to use OpenGL.
+
+A normal Windows launch uses two Hush processes: the window/tray and the
+background worker. An occupied worker lock means the service is already running.
+Windows reports that condition as `ERROR_LOCK_VIOLATION` (OS error 33); Hush
+recognizes it using fs2's platform-specific contention code. Window, launch,
+and credential locks use the same check, so a repeated start restores the
+existing window and does not create another worker.
+
+Release **1.6.0** still uses OpenGL 2.0 or later. On a Dockur/Windows VM exposing
+only OpenGL 1.1, it exits with `egui_glow requires opengl 2.0+` before creating
+the tray. Installing Visual C++ does not fix that graphics error; use a build
+with the DirectX renderer. Separately, 1.6.0 imports `VCRUNTIME140.dll` and needs
+the [Microsoft Visual C++ x64 runtime](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist/)
+if it is not already installed.
+
+Failed GUI starts in the updated build show a native error dialog and save the
+latest error to `%LOCALAPPDATA%\Hush\Hush\data\startup.log`. Background/CLI
+commands retain stderr output without opening a dialog. For older releases,
+capture an isolated demo start in PowerShell (close the demo if it opens):
+
+```powershell
+$p = Start-Process "$env:LOCALAPPDATA\Programs\Hush\hush.exe" -ArgumentList '--demo' -Wait -PassThru -RedirectStandardError "$env:TEMP\hush-start.txt"
+"Exitcode: $($p.ExitCode)"
+Get-Content "$env:TEMP\hush-start.txt"
+```
+
 ### Builds and releases
 
 The only workflow, `release.yml`, starts automatically only when a GitHub release

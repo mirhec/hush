@@ -1,9 +1,68 @@
-# Validation record — October 9, 2026
+# Validation record — October 13, 2026
 
 This document records checks performed at specific implementation stages. Older
 results describe the code and environment at that time, including features that
 have since changed. They are not a claim that every check was rerun against the
 latest revision.
+
+## Windows startup on Dockur without OpenGL 2.0 — October 13, 2026
+
+The user reproduced the Release 1.6.0 startup failure on Windows 11 in Dockur:
+`Hush: Could not open the window: egui_glow: OpenGL: egui_glow requires opengl 2.0+.`
+The process returned exit code 1 before creating the tray. The Windows renderer
+was changed to DX12 with hardware preference and WARP software fallback; the
+VC++ runtime is now linked statically, and GUI startup errors receive a native
+dialog and a `startup.log` file.
+
+- The Windows x86-64 release executable and the dedicated software-rendering
+  test cross-compiled successfully. PE import inspection confirmed no OpenGL,
+  VC++ redistributable, or DXC DLL imports.
+- **112 Rust tests passed** with all targets on Linux; **71 core tests passed**
+  without the desktop feature. **11 packaging tests passed**, including actual
+  NSIS compilation in an isolated container.
+- The user ran the supplied `Grafiktest.cmd` in the actual Dockur Windows 11
+  session and reported a briefly visible Hush window and this output:
+
+  ```text
+  Rendering with Microsoft Basic Render Driver (Dx12, Cpu)
+  Windows DX12/WARP demo frame: OK
+  Exitcode: 0
+  ```
+
+The test forces the CPU adapter, renders the real offline demo, reads back a
+screenshot with nonblank UI pixels, and closes the window deliberately. This
+confirms native DX12/WARP rendering on the affected VM. It does not exercise
+the normal launch, tray, background service, account, or notifications; these
+remain separate checks. No new GitHub release has been published for this fix.
+
+### Follow-up: occupied Windows file locks
+
+The user subsequently launched the normal test executable: the window and two
+Hush processes appeared, but startup reported OS error 33. Two processes are
+expected (window/tray plus worker). The error came from treating an occupied
+Windows `LockFileEx` lock as a failure instead of recognizing the running worker.
+The code previously checked only `ErrorKind::WouldBlock`; it now also compares
+the OS code returned by `fs2::lock_contended_error()` at every lock boundary.
+
+- **117 Rust tests passed** on Linux, plus the new standalone worker lifecycle
+  test. Coverage includes occupied worker detection, duplicate worker rejection,
+  serialized concurrent launches, and waiting for a credential lock.
+- The standalone test runs the real worker subprocess protocol against an
+  isolated temporary database: startup confirmation, repeated launch, duplicate
+  process exit, continuing heartbeat, stop, and restart all passed on Linux.
+- Clippy passed with the five existing suggestions. The updated Windows EXE,
+  Windows library/service regression tests, and standalone worker test
+  cross-compiled successfully; runtime imports were checked again.
+- The Windows diagnostic bundle `Hush-DirectX-Test-2026-10-13-v2` includes
+  `Diensttest.cmd` and the corrected `hush.exe`. The user confirmed that normal
+  launch on the affected Windows 11 VM no longer produces an error. No output
+  from `Diensttest.cmd` was supplied; the complete native worker lifecycle,
+  notifications, and login autostart remain separate checks.
+
+The first parallel Linux regression run caught a test-only fork/exec timing
+window: another process test could briefly inherit a lock descriptor. Explicitly
+unlocking the test-owned file before checking release removed that race; the
+production contention check was unchanged.
 
 ## Cross-platform login startup
 

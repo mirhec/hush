@@ -2,7 +2,19 @@
 
 ## Processes
 
+Windows uses eframe/wgpu with DirectX 12 and the built-in FXC compiler. Adapter
+selection prefers hardware but allows WARP (CPU rendering), so VMs without
+OpenGL 2.0 can open the UI. Linux/macOS keep the Glow renderer. Windows GUI
+startup errors and main-thread panics produce a native MessageBox and the latest
+`startup.log`; worker and CLI commands continue to report errors on stderr.
+
 A single executable provides a window mode and a `--background` mode. The window starts the background process using the absolute path of its own executable, without a shell. An exclusive file lock prevents duplicate polling processes. The window and worker each open their own SQLite connection. There is no localhost HTTP server, open network port, or token transfer in IPC messages. The worker reads credentials directly from the operating system's credential store.
+
+Lock contention is identified through `fs2::lock_contended_error()`'s OS code as
+well as `WouldBlock`. On Windows, `LockFileEx` returns error 33 for an occupied
+lock, which Rust does not classify as `WouldBlock`. Worker status, duplicate
+workers/windows, concurrent launches, and credential changes all use the same
+classification; permission and sharing violations remain errors.
 
 A heartbeat updates a timestamp every five seconds. The worker checks stop and refresh flags between cycles; a running cycle can contain multiple requests, each with a 20-second timeout. Stopping the worker therefore does not immediately interrupt an active HTTP request. The worker is not an automatically installed system service and does not restart after a reboot unless autostart has been explicitly configured.
 

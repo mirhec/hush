@@ -27,7 +27,7 @@ pub fn is_running(paths: &Paths) -> Result<bool> {
             FileExt::unlock(&file)?;
             Ok(false)
         }
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(true),
+        Err(e) if crate::locking::is_contended(&e) => Ok(true),
         Err(e) => Err(e.into()),
     }
 }
@@ -39,7 +39,7 @@ pub fn launch(paths: &Paths) -> Result<()> {
     loop {
         match launch_lock.try_lock_exclusive() {
             Ok(()) => break,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(e) if crate::locking::is_contended(&e) => {
                 ensure!(
                     waiting.elapsed() < Duration::from_secs(12),
                     "Ein anderer Dienststart ist noch nicht abgeschlossen."
@@ -177,7 +177,7 @@ fn lock_credentials(paths: &Paths) -> Result<std::fs::File> {
     loop {
         match file.try_lock_exclusive() {
             Ok(()) => return Ok(file),
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(error) if crate::locking::is_contended(&error) => {
                 ensure!(
                     started.elapsed() < Duration::from_secs(30),
                     "Eine GitHub-Anmeldung wird noch verarbeitet. Bitte erneut versuchen."
@@ -292,7 +292,7 @@ pub fn run_background(paths: Paths) -> Result<()> {
     let lock = paths.lock_file()?;
     match lock.try_lock_exclusive() {
         Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return Ok(()),
+        Err(e) if crate::locking::is_contended(&e) => return Ok(()),
         Err(e) => return Err(e.into()),
     }
     let mut store = Store::open(&paths)?;

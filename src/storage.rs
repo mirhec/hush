@@ -53,6 +53,11 @@ impl Paths {
         file.set_len(0)?;
         Ok(file)
     }
+    pub fn startup_log(&self) -> Result<File> {
+        let file = private_file(&self.root.join("startup.log"))?;
+        file.set_len(0)?;
+        Ok(file)
+    }
     pub fn credentials_lock_file(&self) -> Result<File> {
         private_file(&self.root.join("credentials.lock"))
     }

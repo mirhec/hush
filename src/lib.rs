@@ -3,6 +3,7 @@ pub mod api;
 pub mod engine;
 pub mod filter;
 pub mod i18n;
+pub mod locking;
 pub mod model;
 pub mod notify;
 pub mod oauth;
@@ -12,6 +13,8 @@ pub mod storage;
 pub mod autostart;
 #[cfg(feature = "desktop")]
 pub mod ui;
+#[cfg(feature = "desktop")]
+pub mod graphics;
 
 #[cfg(all(feature = "desktop", target_os = "linux"))]
 pub mod linux_desktop;
